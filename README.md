@@ -12,12 +12,20 @@ DuckDB extension for Delta Sharing protocol. By loading this extension, DuckDB c
 
 - `delta_share_read('share_name', 'schema_name', 'table_name')` → Reads all files under `table_name`.
   - Supports predicate pushdown and partition column isolation (experimental).
-  - Filters might not work as expected when using this function.
+
+- `delta_share_list_files(<3-4>)` → Lists all files under specified table.  
+  - `delta_share_list('share_name', 'schema_name', 'table_name')` → All files under table. No projection for `partition_columns`.
+  - `delta_share_list('share_name', 'schema_name', 'table_name', '<filter_clause>')` → Filter via partition column. i.e. `date > 20251231`.
 
 ## Dependencies
 
 - `httpfs`
 - `read_parquet`
+
+## Limitations
+
+- `SELECT * FROM delta_share_read` will not work if the table has a partition column. This is a trade-off in allowing filter pruning for partition column. Users will have to specify columns.
+- `SELECT field FROM delta_share_read` is not yet optimized (single-threaded). `SELECT COUNT(*) delta_share_read` leverages DuckDB parallelism.
 
 ## Configuration
 
