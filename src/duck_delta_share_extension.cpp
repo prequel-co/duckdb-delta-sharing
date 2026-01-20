@@ -1,21 +1,17 @@
 #define DUCKDB_EXTENSION_MAIN
 
 #include "duck_delta_share_extension.hpp"
+#include "duck_delta_share_functions.hpp"
 #include "duckdb.hpp"
 #include "duckdb/common/exception.hpp"
 #include "duckdb/function/scalar_function.hpp"
 #include "duckdb/function/table_function.hpp"
 #include "duckdb/parser/parsed_data/create_scalar_function_info.hpp"
 #include "duckdb/planner/operator/logical_get.hpp"
-#include "duckdb/planner/expression/bound_conjunction_expression.hpp"
-#include "duckdb/planner/expression/bound_between_expression.hpp"
-#include "duckdb/planner/expression/bound_columnref_expression.hpp"
-#include "duckdb/planner/expression/bound_comparison_expression.hpp"
-#include "duckdb/planner/expression/bound_constant_expression.hpp"
-#include "duckdb/planner/expression/bound_operator_expression.hpp"
 #include "duckdb/main/connection.hpp"
 #include "duckdb/main/query_result.hpp"
 #include "duckdb/main/materialized_query_result.hpp"
+#include "duckdb/planner/expression/bound_function_expression.hpp"
 #include <nlohmann/json.hpp>
 #include <unordered_set>
 
@@ -115,364 +111,6 @@ static void ListFunction(
     output.SetCardinality(count);
 }
 
-static std::string ExtractColumnNameFromHint(const std::string &hint) {
-    size_t pos = hint.find_first_of(" =<>!");
-    if (pos != std::string::npos) {
-        return hint.substr(0, pos);
-    }
-    return "";
-}
-
-static void ParseExpression(Expression& expr, std::vector<std::string>& res) {
-    switch (expr.type) {
-        case ExpressionType::COMPARE_EQUAL:
-        case ExpressionType::COMPARE_NOTEQUAL:
-        case ExpressionType::COMPARE_LESSTHAN:
-        case ExpressionType::COMPARE_GREATERTHAN:
-        case ExpressionType::COMPARE_LESSTHANOREQUALTO:
-        case ExpressionType::COMPARE_GREATERTHANOREQUALTO: {
-            auto &comp_expr = expr.Cast<BoundComparisonExpression>();
-
-            std::string col_name;
-            std::string value_str;
-            std::string op;
-
-            switch (expr.type) {
-                case ExpressionType::COMPARE_EQUAL: op = "="; break;
-                case ExpressionType::COMPARE_NOTEQUAL: op = "!="; break;
-                case ExpressionType::COMPARE_LESSTHAN: op = "<"; break;
-                case ExpressionType::COMPARE_GREATERTHAN: op = ">"; break;
-                case ExpressionType::COMPARE_LESSTHANOREQUALTO: op = "<="; break;
-                case ExpressionType::COMPARE_GREATERTHANOREQUALTO: op = ">="; break;
-                default: return;
-            }
-
-            if (comp_expr.left->type == ExpressionType::BOUND_COLUMN_REF) {
-                auto &col_ref = comp_expr.left->Cast<BoundColumnRefExpression>();
-                col_name = col_ref.GetName();
-            } else if (comp_expr.right->type == ExpressionType::BOUND_COLUMN_REF) {
-                auto &col_ref = comp_expr.right->Cast<BoundColumnRefExpression>();
-                col_name = col_ref.GetName();
-
-                if (op == "<") op = ">";
-                else if (op == ">") op = "<";
-                else if (op == "<=") op = ">=";
-                else if (op == ">=") op = "<=";
-            }
-
-            Expression *const_expr = nullptr;
-            if (comp_expr.left->type == ExpressionType::VALUE_CONSTANT && !col_name.empty()) {
-                const_expr = comp_expr.left.get();
-            } else if (comp_expr.right->type == ExpressionType::VALUE_CONSTANT && !col_name.empty()) {
-                const_expr = comp_expr.right.get();
-            }
-
-            if (const_expr && !col_name.empty()) {
-                auto &const_val_expr = const_expr->Cast<BoundConstantExpression>();
-                auto &value = const_val_expr.value;
-
-                if (value.IsNull()) {
-                    if (op == "=") res.push_back(col_name + " IS NULL");
-                    if (op == "!=") res.push_back(col_name + " IS NOT NULL");
-                } else {
-                    switch (value.type().id()) {
-                        case LogicalTypeId::VARCHAR:
-                            value_str = "'" + value.ToString() + "'";
-                            break;
-                        case LogicalTypeId::INTEGER:
-                        case LogicalTypeId::BIGINT:
-                        case LogicalTypeId::DOUBLE:
-                        case LogicalTypeId::FLOAT:
-                            value_str = value.ToString();
-                            break;
-                        default:
-                            value_str = "'" + value.ToString() + "'";
-                            break;
-                    }
-                    res.push_back(col_name + " " + op + " " + value_str);
-                }
-            }
-            break;
-        }
-        case ExpressionType::COMPARE_IN: {
-            auto &in_expr = expr.Cast<BoundOperatorExpression>();
-            if (in_expr.children.size() >= 2 &&
-                in_expr.children[0]->type == ExpressionType::BOUND_COLUMN_REF) {
-                auto &col_ref = in_expr.children[0]->Cast<BoundColumnRefExpression>();
-                std::string col_name = col_ref.GetName();
-
-                std::vector<std::string> values;
-                for (size_t i = 1; i < in_expr.children.size(); i++) {
-                    if (in_expr.children[i]->type == ExpressionType::VALUE_CONSTANT) {
-                        auto &const_expr = in_expr.children[i]->Cast<BoundConstantExpression>();
-                        auto &value = const_expr.value;
-                        if (!value.IsNull()) {
-                            if (value.type().id() == LogicalTypeId::VARCHAR) {
-                                values.push_back("'" + value.ToString() + "'");
-                            } else {
-                                values.push_back(value.ToString());
-                            }
-                        }
-                    }
-                }
-
-                if (!values.empty()) {
-                    std::string values_str = "";
-                    for (size_t i = 0; i < values.size(); i++) {
-                        if (i > 0) values_str += ", ";
-                        values_str += values[i];
-                    }
-                    res.push_back(col_name + " IN (" + values_str + ")");
-                }
-            }
-            break;
-        }
-        case ExpressionType::COMPARE_BETWEEN: {
-            auto& between = expr.Cast<BoundBetweenExpression>();
-            auto lower_comp = between.LowerComparisonType();
-            auto upper_comp = between.UpperComparisonType();
-            auto left_expr = make_uniq<BoundComparisonExpression>(
-                lower_comp, between.input->Copy(), between.lower->Copy());
-            auto right_expr = make_uniq<BoundComparisonExpression>(
-                upper_comp, between.input->Copy(), between.upper->Copy());
-
-            ParseExpression(*left_expr, res);
-            res.push_back("AND");
-            ParseExpression(*right_expr, res);
-            break;
-        }
-        case ExpressionType::CONJUNCTION_AND: {
-            auto& expr_node = expr.Cast<BoundConjunctionExpression>();
-
-            if (expr_node.children.size()) ParseExpression(*expr_node.children[0], res);
-            res.push_back("AND");
-            if (expr_node.children.size() > 1) ParseExpression(*expr_node.children[1], res);
-            break;
-        }
-        case ExpressionType::CONJUNCTION_OR: {
-            auto& expr_node = expr.Cast<BoundConjunctionExpression>();
-            if (expr_node.children.size()) ParseExpression(*expr_node.children[0], res);
-            res.push_back("OR");
-            if (expr_node.children.size() > 1) ParseExpression(*expr_node.children[1], res);
-            break;
-        }
-        default:
-            break;
-    }
-}
-
-static json OperandJSON(Expression& expr) {
-    json res{};
-    
-    if (expr.type == ExpressionType::BOUND_COLUMN_REF) {
-        auto& column = expr.Cast<BoundColumnRefExpression>();
-        res["op"] = "column";
-        res["name"] = column.GetName();
-        switch (column.return_type.id()) {
-            case LogicalTypeId::BOOLEAN:
-            case LogicalTypeId::TINYINT:
-            case LogicalTypeId::INTEGER:
-            case LogicalTypeId::BIGINT:
-            case LogicalTypeId::DOUBLE:
-                res["valueType"] = "int";
-                break;
-            case LogicalTypeId::VARCHAR:
-            default:
-                res["valueType"] = "string";
-                break;
-        }
-        return res;
-    } else if (expr.type == ExpressionType::VALUE_CONSTANT) {
-        auto& literal = expr.Cast<BoundConstantExpression>();
-        res["op"]        = "literal";
-        res["value"]     = literal.value.ToString();
-        switch (literal.return_type.id()) {
-            case LogicalTypeId::BOOLEAN:
-            case LogicalTypeId::TINYINT:
-            case LogicalTypeId::INTEGER:
-            case LogicalTypeId::BIGINT:
-            case LogicalTypeId::DOUBLE:
-                res["valueType"] = "int";
-                break;
-            case LogicalTypeId::VARCHAR:
-            default:
-                res["valueType"] = "string";
-                break;
-        }
-
-        return res;
-    }
-    return res;
-}
-
-static json BinaryOpJSON(Expression& expr, std::string op) {
-    json res{};
-    res["op"] = op;
-    res["children"] = json::array();
-    auto &comp_expr = expr.Cast<BoundComparisonExpression>();
-    if (comp_expr.left) res["children"].push_back(OperandJSON(*comp_expr.left));
-    if (comp_expr.right) res["children"].push_back(OperandJSON(*comp_expr.right));
-    return res;
-}
-
-static json ParseExpressionHint(Expression& expr) {
-    json res{};
-    std::string op;
-    std::string left_name;
-    std::string left_type;
-    std::string right_name;
-    std::string right_type;
-    switch (expr.type) {
-        case ExpressionType::COMPARE_EQUAL: {
-            op = "equal";
-            res = BinaryOpJSON(expr, op);
-        } break;
-        case ExpressionType::COMPARE_LESSTHAN: {
-            op = "lessThan";
-            res = BinaryOpJSON(expr, op);
-        } break;
-        case ExpressionType::COMPARE_GREATERTHAN: {
-            op = "greaterThan";
-            res = BinaryOpJSON(expr, op);
-        } break;
-        case ExpressionType::COMPARE_LESSTHANOREQUALTO: {
-            op = "lessThanOrEqual";
-            res = BinaryOpJSON(expr, op);
-        } break;
-        case ExpressionType::COMPARE_GREATERTHANOREQUALTO: {
-            op = "greaterThanOrEqual";
-            res = BinaryOpJSON(expr, op);
-        } break;
-        case ExpressionType::COMPARE_NOTEQUAL: {
-            op = "equal";
-            res["op"] = "not";
-            res["children"] = json::array();
-            json equal_predicate = BinaryOpJSON(expr, op); 
-            res["children"].push_back(equal_predicate);
-            break;
-        }
-        case ExpressionType::OPERATOR_IS_NULL: {
-            res["op"] = "isNull";
-            auto &op_expr = expr.Cast<BoundOperatorExpression>();
-            res["children"] = json::array();
-            res["children"].push_back(OperandJSON(*op_expr.children[0]));
-            break;
-        }
-        case ExpressionType::OPERATOR_IS_NOT_NULL: {
-            res["op"] = "not";
-            auto &op_expr = expr.Cast<BoundOperatorExpression>();
-            res["children"] = json::array();
-            json is_null_child{};
-            is_null_child["op"] = "isNull";
-            is_null_child["children"] = json::array();
-            is_null_child["children"].push_back(OperandJSON(*op_expr.children[0]));
-            res["children"].push_back(is_null_child);
-            break;
-        } break;
-        case ExpressionType::CONJUNCTION_AND: {
-            auto& expr_node = expr.Cast<BoundConjunctionExpression>();
-            res["op"] = "and";
-            res["children"] = json::array();
-            if (expr_node.children.size())
-                res["children"].push_back(ParseExpressionHint(*expr_node.children[0]));
-            if (expr_node.children.size() > 1)
-                res["children"].push_back(ParseExpressionHint(*expr_node.children[1]));
-        } break;
-        case ExpressionType::CONJUNCTION_OR: {
-            auto& expr_node = expr.Cast<BoundConjunctionExpression>();
-            res["op"] = "or";
-            res["children"] = json::array();
-            if (expr_node.children.size())
-                res["children"].push_back(ParseExpressionHint(*expr_node.children[0]));
-            if (expr_node.children.size() > 1)
-                res["children"].push_back(ParseExpressionHint(*expr_node.children[1]));
-        } break;
-        case ExpressionType::COMPARE_BETWEEN: {
-            res["op"] = "and";
-            res["children"] = json::array();
-            auto& between = expr.Cast<BoundBetweenExpression>();
-            auto lower_comp = between.LowerComparisonType();
-            auto upper_comp = between.UpperComparisonType();
-            auto left_expr = make_uniq<BoundComparisonExpression>(
-                lower_comp, between.input->Copy(), between.lower->Copy());
-            auto right_expr = make_uniq<BoundComparisonExpression>(
-                upper_comp, between.input->Copy(), between.upper->Copy());
-            res["children"].push_back(ParseExpressionHint(*left_expr));
-            res["children"].push_back(ParseExpressionHint(*right_expr));
-        }
-        default:
-            break;
-    }
-    return res;
-}
-
-static json GetPredicateHints(vector<unique_ptr<Expression>>& filters) {
-    std::vector<json> hints;
-    for (auto& expr: filters) {
-        hints.push_back(ParseExpressionHint(*expr));
-    }
-
-    if (hints.empty()) return json{};
-    if (hints.size() == 1) return hints[0];
-    json combined_hints{};
-    combined_hints["op"] = "and";
-    combined_hints["children"] = json::array();
-
-    for (auto& hint: hints) {
-        combined_hints["children"].push_back(hint);
-    }
-    return combined_hints;
-}
-
-static LogicalType DeltaTypeToDuckDBType(const std::string &delta_type) {
-    if (DeltaLogicalMap.find(delta_type) != DeltaLogicalMap.end())
-        return DeltaLogicalMap[delta_type];
-    return LogicalType::VARCHAR;
-}
-
-static void ParseDeltaSchema(const std::string &schema_json, vector<string> &names, vector<LogicalType> &types, const json &partition_columns_json, std::unordered_set<std::string> &partition_columns) {
-    try {
-        auto schema = json::parse(schema_json);
-
-        if (!schema.contains("fields") || !schema["fields"].is_array()) {
-            throw IOException("ParseDeltaSchema error: missing or invalid 'fields' array");
-        }
-
-        // Get partition columns. These columns are to be excluded in read_parquet
-        if (partition_columns_json.is_array()) {
-            for (const auto &partition_col : partition_columns_json) {
-                if (partition_col.is_string()) {
-                    partition_columns.insert(partition_col.get<std::string>());
-                }
-            }
-        }
-
-        for (const auto &field : schema["fields"]) {
-            if (!field.contains("name") || !field.contains("type")) {
-                continue;
-            }
-
-            std::string col_name = field["name"].get<std::string>();
-            names.push_back(col_name);
-
-            // Simple implementation for now.
-            // Type can be a string or an object
-            if (field["type"].is_string()) {
-                std::string type_str = field["type"].get<std::string>();
-                types.push_back(DeltaTypeToDuckDBType(type_str));
-            } else if (field["type"].is_object()) {
-                // Complex type - for now just use VARCHAR
-                // A full implementation would handle structs, arrays, maps
-                types.push_back(LogicalType::VARCHAR);
-            } else {
-                types.push_back(LogicalType::VARCHAR);
-            }
-        }
-    } catch (const std::exception &e) {
-        throw IOException("ParseDeltaSchema error: " + std::string(e.what()));
-    }
-}
-
 static void ReadDeltaSharePushdownComplexFilter(
     ClientContext &context,
     LogicalGet &get,
@@ -516,6 +154,7 @@ static unique_ptr<FunctionData> ReadDeltaShareBind(
     // Convert JsonValue to json for ParseDeltaSchema
     auto* partition_cols_json = static_cast<const json*>(result->metadata.partition_columns.GetInternalPtr());
     ParseDeltaSchema(result->metadata.schema_string, names, return_types, *partition_cols_json, result->partition_columns);
+    result->column_names = names;  // Store column names for projection mapping
     return std::move(result);
 }
 
@@ -539,47 +178,21 @@ static unique_ptr<GlobalTableFunctionState> ReadDeltaShareInit(
     bind_data.current_idx = 0;
 
     auto state = make_uniq<ReadDeltaShareGlobalState>();
-    // Create a connection to execute read_parquet queries
-    state->con = make_uniq<Connection>(*context.db);
-    return std::move(state);
-}
 
-static void ReadDeltaShareFunction(
-    ClientContext &context,
-    TableFunctionInput &data_p,
-    DataChunk &output) {
-
-    auto &bind_data = data_p.bind_data->CastNoConst<ReadDeltaShareBindData>();
-    auto &gstate = data_p.global_state->Cast<ReadDeltaShareGlobalState>();
-
-    if (bind_data.files.empty()) {
-        output.SetCardinality(0);
-        return;
-    }
-
-    if (gstate.current_result) {
-        auto chunk = gstate.current_result->Fetch();
-        if (chunk) {
-            output.Reference(*chunk);
-            return;
+    // Capture projection info - map column IDs to column names
+    for (auto col_id : input.column_ids) {
+        if (col_id != COLUMN_IDENTIFIER_ROW_ID && col_id < bind_data.column_names.size()) {
+            state->projected_column_ids.push_back(col_id);
+            state->projected_columns.push_back(bind_data.column_names[col_id]);
         }
-        gstate.current_result.reset();
     }
 
-    if (gstate.file_idx >= bind_data.files.size()) {
-        output.SetCardinality(0);
-        return;
-    }
+    // Store file count for MaxThreads
+    state->file_count = bind_data.files.size();
 
-    auto &file = bind_data.files[gstate.file_idx];
-    gstate.file_idx++;
-    std::string query;
-
-    query = "SELECT * FROM read_parquet('" + file.url + "')";
-    if (!gstate.parquet_filters.empty()) query += gstate.parquet_filters;
-    else if (!bind_data.filters.empty()) {
+    // Pre-compute parquet filters once for all threads
+    if (!bind_data.filters.empty()) {
         std::string parquet_filters = " WHERE ";
-        size_t filter_count{0};
         std::vector<std::string> parquet_predicates;
         // Filter out partition columns
         for (const auto &hint : bind_data.filters) {
@@ -591,7 +204,8 @@ static void ReadDeltaShareFunction(
             }
         }
 
-        // Build read_parquet query excluding partiton columns  
+        // Build WHERE clause
+        size_t filter_count{0};
         for (size_t i = 0; i < parquet_predicates.size(); i++) {
             if (parquet_predicates[i] == "OR" || parquet_predicates[i] == "AND") continue;
             if (i > 0) {
@@ -601,31 +215,185 @@ static void ReadDeltaShareFunction(
             ++filter_count;
         }
         if (filter_count) {
-            gstate.parquet_filters = parquet_filters;
-            query += parquet_filters;
-        } else {
-            gstate.parquet_filters = ";";
+            state->parquet_filters = parquet_filters;
         }
     }
 
-    try {
-        // Use DuckDB read_parquet
-        gstate.current_result = gstate.con->SendQuery(query);
-        if (gstate.current_result->HasError()) {
-            throw IOException("ReadDeltaShare error: read_parquet query failed. Reason: " + gstate.current_result->GetError());
+    return std::move(state);
+}
+
+static unique_ptr<LocalTableFunctionState> ReadDeltaShareInitLocal(
+    ExecutionContext &context,
+    TableFunctionInitInput &input,
+    GlobalTableFunctionState *global_state) {
+
+    auto local_state = make_uniq<ReadDeltaShareLocalState>();
+    local_state->con = make_uniq<Connection>(*context.client.db);
+    return std::move(local_state);
+}
+
+static void ReadDeltaShareFunction(
+    ClientContext &context,
+    TableFunctionInput &data_p,
+    DataChunk &output) {
+
+    auto &bind_data = data_p.bind_data->CastNoConst<ReadDeltaShareBindData>();
+    auto &gstate = data_p.global_state->Cast<ReadDeltaShareGlobalState>();
+    auto &lstate = data_p.local_state->Cast<ReadDeltaShareLocalState>();
+
+    if (bind_data.files.empty()) {
+        output.SetCardinality(0);
+        return;
+    }
+
+    // Try to fetch from current result first
+    while (true) {
+        if (lstate.current_result) {
+            auto chunk = lstate.current_result->Fetch();
+            if (chunk) {
+                output.Reference(*chunk);
+                return;
+            }
+            lstate.current_result.reset();
         }
 
-        // Return output from query
-        auto chunk = gstate.current_result->Fetch();
-        if (chunk) {
-            output.Reference(*chunk);
-        } else {
-            gstate.current_result.reset();
-            gstate.file_idx++;
+        // Get next file using atomic increment
+        idx_t file_idx = gstate.next_file_idx.fetch_add(1);
+        if (file_idx >= bind_data.files.size()) {
+            output.SetCardinality(0);
+            return;
         }
-    } catch (const std::exception &e) {
-        throw IOException("ReadDeltaShare error: failed to read parquet file from " + file.url + ": " + std::string(e.what()));
+        lstate.current_file_idx = file_idx;
+
+        auto &file = bind_data.files[file_idx];
+
+        // Build column list for projection pushdown, excluding partition columns
+        std::string select_columns;
+        if (!gstate.projected_columns.empty()) {
+            std::vector<std::string> parquet_columns;
+            for (const auto &col : gstate.projected_columns) {
+                // Only include non-partition columns (partition values aren't in parquet files)
+                if (bind_data.partition_columns.find(col) == bind_data.partition_columns.end()) {
+                    parquet_columns.push_back("\"" + col + "\"");
+                }
+            }
+            if (!parquet_columns.empty()) {
+                for (size_t i = 0; i < parquet_columns.size(); i++) {
+                    if (i > 0) select_columns += ", ";
+                    select_columns += parquet_columns[i];
+                }
+            } else {
+                // All projected columns are partition columns - select minimal data
+                select_columns = "*";
+            }
+        } else {
+            select_columns = "*";
+        }
+
+        std::string query = "SELECT " + select_columns + " FROM read_parquet('" + file.url + "')";
+        if (!gstate.parquet_filters.empty()) {
+            query += gstate.parquet_filters;
+        }
+
+        try {
+            // Use per-thread connection for read_parquet
+            lstate.current_result = lstate.con->SendQuery(query);
+            if (lstate.current_result->HasError()) {
+                throw IOException("ReadDeltaShare error: read_parquet query failed. Reason: " + lstate.current_result->GetError());
+            }
+
+            // Return output from query
+            auto chunk = lstate.current_result->Fetch();
+            if (chunk) {
+                output.Reference(*chunk);
+                return;
+            }
+            lstate.current_result.reset();
+            // Continue loop to get next file
+        } catch (const std::exception &e) {
+            throw IOException("ReadDeltaShare error: failed to read parquet file from " + file.url + ": " + std::string(e.what()));
+        }
     }
+}
+
+// Section: delta_share_list_files scalar function
+
+static unique_ptr<FunctionData> DeltaShareListFilesBind(
+    ClientContext &context,
+    ScalarFunction &bound_function,
+    vector<unique_ptr<Expression>> &arguments) {
+
+    auto result = make_uniq<DeltaShareListFilesBindData>();
+    result->has_predicate_hints = (arguments.size() == 4);
+    return std::move(result);
+}
+
+static void DeltaShareListFilesFunction(
+    DataChunk &args,
+    ExpressionState &state,
+    Vector &result) {
+
+    auto &bind_data = state.expr.Cast<BoundFunctionExpression>().bind_info->Cast<DeltaShareListFilesBindData>();
+
+    idx_t count = args.size();
+
+    // Setup result as LIST(VARCHAR)
+    result.SetVectorType(VectorType::FLAT_VECTOR);
+    auto list_data = FlatVector::GetData<list_entry_t>(result);
+    auto &child_vector = ListVector::GetEntry(result);
+    auto &result_validity = FlatVector::Validity(result);
+
+    idx_t total_size = 0;
+
+    // Process each row in the input
+    for (idx_t row_idx = 0; row_idx < count; row_idx++) {
+        // Get argument values
+        auto share_name = args.data[0].GetValue(row_idx).ToString();
+        auto schema_name = args.data[1].GetValue(row_idx).ToString();
+        auto table_name = args.data[2].GetValue(row_idx).ToString();
+
+        // Handle optional predicate hints
+        JsonValue predicate_hints = JsonValue::Object();
+        if (args.ColumnCount() >= 4) {
+            auto pred_value = args.data[3].GetValue(row_idx);
+            if (!pred_value.IsNull()) {
+                string predicate_string = pred_value.ToString();
+                auto predicate_json = ParsePredicateStringToJson(predicate_string);
+                predicate_hints = JsonValue::FromInternal(&predicate_json);
+            }
+        }
+
+        try {
+            // Get client from context
+            auto &context = state.GetContext();
+            DeltaSharingProfile profile = DeltaSharingProfile::FromConfig(context);
+            DeltaSharingClient client(profile);
+
+            // Query table to get files
+            auto query_result = client.QueryTable(
+                share_name, schema_name, table_name, predicate_hints);
+
+            // Set list entry metadata
+            list_data[row_idx].offset = total_size;
+            list_data[row_idx].length = query_result.files.size();
+
+            // Reserve space in child vector
+            ListVector::Reserve(result, total_size + query_result.files.size());
+            auto child_data = FlatVector::GetData<string_t>(child_vector);
+
+            // Add file URLs to child vector
+            for (size_t i = 0; i < query_result.files.size(); i++) {
+                child_data[total_size + i] = StringVector::AddString(child_vector, query_result.files[i].url);
+            }
+
+            total_size += query_result.files.size();
+
+        } catch (const std::exception &e) {
+            throw IOException("delta_share_list_files error: " + std::string(e.what()));
+        }
+    }
+
+    ListVector::SetListSize(result, total_size);
 }
 
 static void LoadInternal(ExtensionLoader &loader) {
@@ -657,9 +425,32 @@ static void LoadInternal(ExtensionLoader &loader) {
     TableFunction read_delta_share("delta_share_read",
                                    {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR},
                                    ReadDeltaShareFunction, ReadDeltaShareBind, ReadDeltaShareInit);
+    read_delta_share.init_local = ReadDeltaShareInitLocal;
+    read_delta_share.projection_pushdown = true;
     read_delta_share.pushdown_complex_filter = ReadDeltaSharePushdownComplexFilter;
     loader.RegisterFunction(list);
     loader.RegisterFunction(read_delta_share);
+
+    // Scalar function: delta_share_list_files
+    ScalarFunctionSet list_files_set("delta_share_list_files");
+
+    // 3-argument version (no predicate hints)
+    ScalarFunction list_files_3arg(
+        {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR},
+        LogicalType::LIST(LogicalType::VARCHAR),
+        DeltaShareListFilesFunction,
+        DeltaShareListFilesBind);
+
+    // 4-argument version (with predicate hints)
+    ScalarFunction list_files_4arg(
+        {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR},
+        LogicalType::LIST(LogicalType::VARCHAR),
+        DeltaShareListFilesFunction,
+        DeltaShareListFilesBind);
+
+    list_files_set.AddFunction(list_files_3arg);
+    list_files_set.AddFunction(list_files_4arg);
+    loader.RegisterFunction(list_files_set);
 
 }
 
