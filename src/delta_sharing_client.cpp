@@ -452,7 +452,7 @@ DeltaSharingClient::QueryTableResult DeltaSharingClient::QueryTable(
 
                 file.version = file_obj.value("version", 0);
                 file.timestamp = file_obj.value("timestamp", 0);
-                file.expiration_timestamp = file_obj.value("expirationTimestamp", "");
+                file.expiration_timestamp = file_obj.value("expirationTimestamp", 0);
                 result.files.push_back(file);
             }
         }
