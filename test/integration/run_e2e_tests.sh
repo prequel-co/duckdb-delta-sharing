@@ -36,20 +36,18 @@ SCHEMA="prequel_dev"
 TABLE="customers"
 
 echo ""
-echo "Running E2E tests against remote table: ${SHARE}.${SCHEMA}.${TABLE}..."
+echo "Running E2E tests against remote table: ${SHARE}.${SCHEMA}.orders (EXPECTED TO HAVE DELETION VECTORS)..."
 echo "---------------------------------------------------------"
 
-QUERY="
+QUERY_ORDERS="
 LOAD '${EXT_PATH}';
 LOAD httpfs;
 SET delta_sharing_endpoint='${DB_ENDPOINT}';
 SET delta_sharing_bearer_token='${DB_TOKEN}';
 
-SELECT * FROM delta_share_read('${SHARE}', '${SCHEMA}', '${TABLE}') LIMIT 10;
+SELECT * FROM delta_share_read('${SHARE}', '${SCHEMA}', 'orders');
 "
-
-echo "Executing DuckDB Query..."
-$DUCKDB_PATH -unsigned -c "$QUERY"
+$DUCKDB_PATH -unsigned -c "$QUERY_ORDERS"
 
 echo "---------------------------------------------------------"
 echo "Integration Test completed successfully."

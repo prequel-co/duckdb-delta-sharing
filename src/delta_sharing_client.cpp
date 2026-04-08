@@ -109,7 +109,7 @@ HttpResponse DeltaSharingClient::PerformRequest(
             const char* empty_body = "{}";
             curl_easy_setopt(curl, CURLOPT_POSTFIELDS, empty_body);
         } else {
-            curl_easy_setopt(curl, CURLOPT_POSTFIELDS, post_data.data());
+            curl_easy_setopt(curl, CURLOPT_COPYPOSTFIELDS, post_data.c_str());
         }
 
     } else if (method == "HEAD") {
@@ -120,8 +120,10 @@ HttpResponse DeltaSharingClient::PerformRequest(
     struct curl_slist *headers = nullptr;
     std::string auth_header = "Authorization: Bearer " + profile_.bearer_token;
     headers = curl_slist_append(headers, auth_header.c_str());
-    headers = curl_slist_append(headers, "Content-Type: application/json; charset=utf-8");
-    headers = curl_slist_append(headers, "delta-sharing-capabilities: responseformat=delta,readerfeatures=deletionvectors,columnMapping");
+    headers = curl_slist_append(headers, "Content-Type: application/json");
+    headers = curl_slist_append(headers, "User-Agent: delta-sharing-spark/3.1.0");
+    headers = curl_slist_append(headers, "Accept: application/x-ndjson,application/json");
+    headers = curl_slist_append(headers, "delta-sharing-capabilities: responseFormat=delta,readerFeatures=deletionVectors,columnMapping");
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
 
     // Set write callback
@@ -378,10 +380,13 @@ DeltaSharingClient::QueryTableResult DeltaSharingClient::QueryTable(
 
     // Build POST request body
     json request_body;
+    // Explicitly request delta format to handle Deletion Vectors correctly
+    request_body["responseFormat"] = "delta";
+    // Some implementations expect a capabilities array in the body as well
+    request_body["capabilities"] = json::array({"responseFormat=delta", "readerFeatures=deletionVectors", "readerFeatures=columnMapping"});
     if (!predicate_hints.IsEmpty()) {
         request_body["predicateHints"] = json::array();
         request_body["predicateHints"].push_back("string");
-        request_body["version"] = 0;
         request_body["jsonPredicateHints"] = predicate_hints.Dump();
     }
     if (limit_hint > 0) {
@@ -392,6 +397,10 @@ DeltaSharingClient::QueryTableResult DeltaSharingClient::QueryTable(
     }
 
     std::string post_data = request_body.dump();
+    {
+        std::ofstream debug_file("/tmp/duck_delta_share_request.json");
+        debug_file << post_data;
+    }
 
     auto response = PerformRequest("POST", "/shares/" + share_name + "/schemas/" + schema_name + "/tables/" + table_name + "/query", "", post_data);
     if (!response.success) {
