@@ -2,7 +2,8 @@
         "dependencies": [
                 "openssl",
                 "curl",
-                "nlohmann-json"
+                "nlohmann-json",
+                "croaring"
         ],
         "vcpkg-configuration": {
                 "overlay-ports": [

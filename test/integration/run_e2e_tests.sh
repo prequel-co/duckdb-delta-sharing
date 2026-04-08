@@ -1,0 +1,55 @@
+#!/bin/bash
+set -eo pipefail
+
+echo "========================================================="
+echo "Delta Sharing E2E Integration Tests (Databricks Server)"
+echo "========================================================="
+
+cd "$(dirname "$0")/../.."
+
+DUCKDB_PATH="./build/release/duckdb"
+EXT_PATH="./build/release/extension/duck_delta_share/duck_delta_share.duckdb_extension"
+
+if [ ! -f "$DUCKDB_PATH" ]; then
+    echo "DuckDB executable not found. Please compile the extension first using 'make release'."
+    exit 1
+fi
+
+if [ ! -f "$EXT_PATH" ]; then
+    echo "Extension not found. Please compile the extension first using 'make release'."
+    exit 1
+fi
+
+if [ -f .env ]; then
+    source .env
+fi
+
+DB_ENDPOINT=${DELTA_SHARING_ENDPOINT:-"https://eastus-c3.azuredatabricks.net/api/2.0/delta-sharing/metastores/88b565d0-d549-486d-8854-fad58d9a179c"}
+DB_TOKEN=${DELTA_SHARING_BEARER_TOKEN:-""}
+
+if [ -z "$DB_TOKEN" ]; then
+    echo "DELTA_SHARING_BEARER_TOKEN not found in environment or .env file"
+    exit 1
+fi
+SHARE="prequel_dev_share"
+SCHEMA="prequel_dev"
+TABLE="customers"
+
+echo ""
+echo "Running E2E tests against remote table: ${SHARE}.${SCHEMA}.${TABLE}..."
+echo "---------------------------------------------------------"
+
+QUERY="
+LOAD '${EXT_PATH}';
+LOAD httpfs;
+SET delta_sharing_endpoint='${DB_ENDPOINT}';
+SET delta_sharing_bearer_token='${DB_TOKEN}';
+
+SELECT * FROM delta_share_read('${SHARE}', '${SCHEMA}', '${TABLE}') LIMIT 10;
+"
+
+echo "Executing DuckDB Query..."
+$DUCKDB_PATH -unsigned -c "$QUERY"
+
+echo "---------------------------------------------------------"
+echo "Integration Test completed successfully."

@@ -13,38 +13,6 @@ struct ListBindData : public TableFunctionData {
     int list_type; // 0=shares, 1=schemas, 2=tables
 };
 
-struct ReadDeltaShareBindData : public TableFunctionData {
-    std::string share_name;
-    std::string schema_name;
-    std::string table_name;
-    std::vector<FileAction> files;
-    std::vector<std::string> filters;
-    JsonValue predicate_hints;
-    TableMetadata metadata;
-    idx_t current_idx = 0;
-    std::unordered_set<std::string> partition_columns;
-    std::vector<std::string> column_names;  // Store column names for projection mapping
-};
-
-struct ReadDeltaShareLocalState : public LocalTableFunctionState {
-    unique_ptr<Connection> con;              // Per-thread connection
-    unique_ptr<QueryResult> current_result;  // Per-thread query result
-    idx_t current_file_idx;                  // File this thread is processing
-
-    ReadDeltaShareLocalState() : current_file_idx(DConstants::INVALID_INDEX) {}
-};
-
-struct ReadDeltaShareGlobalState : public GlobalTableFunctionState {
-    atomic<idx_t> next_file_idx{0};          // Thread-safe file assignment
-    std::string parquet_filters;             // Computed once, shared read-only
-    std::vector<idx_t> projected_column_ids;
-    std::vector<std::string> projected_columns;
-    idx_t file_count{0};
-
-    idx_t MaxThreads() const override {
-        return file_count > 0 ? file_count : 1;
-    }
-};
 
 struct DeltaShareListFilesBindData : public FunctionData {
     string share_name;
