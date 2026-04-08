@@ -9,6 +9,17 @@ set(TARGET_NAME duck_delta_share)
 find_package(OpenSSL REQUIRED)
 find_package(CURL REQUIRED)
 find_package(nlohmann_json REQUIRED)
+find_path(CROARING_INCLUDE_DIR roaring/roaring.h HINTS /opt/homebrew/include)
+find_library(CROARING_LIBRARY NAMES roaring HINTS /opt/homebrew/lib)
+if(CROARING_INCLUDE_DIR AND CROARING_LIBRARY)
+    add_library(croaring UNKNOWN IMPORTED)
+    set_target_properties(croaring PROPERTIES
+        IMPORTED_LOCATION "${CROARING_LIBRARY}"
+        INTERFACE_INCLUDE_DIRECTORIES "${CROARING_INCLUDE_DIR}"
+    )
+else()
+    message(FATAL_ERROR "croaring not found")
+endif()
 
 set(EXTENSION_NAME ${TARGET_NAME}_extension)
 set(LOADABLE_EXTENSION_NAME ${TARGET_NAME}_loadable_extension)
@@ -19,6 +30,7 @@ include_directories(src/include)
 set(EXTENSION_SOURCES
     src/duck_delta_share_extension.cpp
     src/duck_delta_share_functions.cpp
+    src/delta_share_multi_file_reader.cpp
     src/delta_sharing_client.cpp
     src/delta_sharing_json.cpp
 )
@@ -27,8 +39,11 @@ build_static_extension(${TARGET_NAME} ${EXTENSION_SOURCES})
 build_loadable_extension(${TARGET_NAME} " " ${EXTENSION_SOURCES})
 
 # Link dependencies in both the static library as the loadable extension
-target_link_libraries(${EXTENSION_NAME} OpenSSL::SSL OpenSSL::Crypto CURL::libcurl nlohmann_json::nlohmann_json)
-target_link_libraries(${LOADABLE_EXTENSION_NAME} OpenSSL::SSL OpenSSL::Crypto CURL::libcurl nlohmann_json::nlohmann_json)
+target_link_libraries(${EXTENSION_NAME} OpenSSL::SSL OpenSSL::Crypto CURL::libcurl nlohmann_json::nlohmann_json croaring)
+target_link_libraries(${LOADABLE_EXTENSION_NAME} OpenSSL::SSL OpenSSL::Crypto CURL::libcurl nlohmann_json::nlohmann_json croaring)
+
+target_include_directories(${EXTENSION_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/duckdb/extension/parquet/include")
+target_include_directories(${LOADABLE_EXTENSION_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/duckdb/extension/parquet/include")
 
 install(
   TARGETS ${EXTENSION_NAME}

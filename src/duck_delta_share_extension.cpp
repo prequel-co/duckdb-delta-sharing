@@ -14,6 +14,9 @@
 #include "duckdb/planner/expression/bound_function_expression.hpp"
 #include <nlohmann/json.hpp>
 #include <unordered_set>
+#include "duckdb/common/vector/list_vector.hpp"
+#include "delta_share_multi_file_reader.hpp"
+#include "duckdb/catalog/catalog_entry/table_function_catalog_entry.hpp"
 
 namespace duckdb {
 
@@ -111,23 +114,12 @@ static void ListFunction(
     output.SetCardinality(count);
 }
 
-static void ReadDeltaSharePushdownComplexFilter(
-    ClientContext &context,
-    LogicalGet &get,
-    FunctionData *bind_data_p,
-    vector<unique_ptr<Expression>> &filters) {
+// -----------------------------------------------------------------------------
+// ReadDeltaShare - MultiFileReader Parquet Overlay Pattern
+// -----------------------------------------------------------------------------
 
-    auto &bind_data = bind_data_p->Cast<ReadDeltaShareBindData>();
-    if (!filters.empty()) {
-        auto predicate_json = GetPredicateHints(filters);
-        bind_data.predicate_hints = JsonValue::FromInternal(&predicate_json);
-        for (auto &filter : filters) {
-            ParseExpression(*filter, bind_data.filters);
-            bind_data.filters.push_back("AND");
-        }
-        if (!bind_data.filters.empty()) bind_data.filters.pop_back();
-    }
-    filters = std::move(vector<unique_ptr<Expression>>{});
+static unique_ptr<MultiFileReader> CreateDeltaShareMultiFileReader(const TableFunction &function) {
+    return make_uniq<DeltaShareMultiFileReader>();
 }
 
 static unique_ptr<FunctionData> ReadDeltaShareBind(
@@ -136,184 +128,68 @@ static unique_ptr<FunctionData> ReadDeltaShareBind(
     vector<LogicalType> &return_types,
     vector<string> &names) {
 
-    auto result = make_uniq<ReadDeltaShareBindData>();
-
     if (input.inputs.size() < 3) {
         throw BinderException("ReadDeltaShareBind usage: delta_share_read('share_name', 'schema_name', 'table_name')");
     }
 
-    result->share_name = input.inputs[0].GetValue<string>();
-    result->schema_name = input.inputs[1].GetValue<string>();
-    result->table_name = input.inputs[2].GetValue<string>();
+    string share_name = input.inputs[0].GetValue<string>();
+    string schema_name = input.inputs[1].GetValue<string>();
+    string table_name = input.inputs[2].GetValue<string>();
 
+    vector<unique_ptr<Expression>> filters;
+
+    // 1. Grab Parquet Scanner TableFunction
+    auto &catalog = Catalog::GetSystemCatalog(context);
+    auto &func_entry = catalog.GetEntry<TableFunctionCatalogEntry>(context, DEFAULT_SCHEMA, "read_parquet");
+    auto read_parquet = func_entry.functions.GetFunctionByArguments(context, {LogicalType::LIST(LogicalType::VARCHAR)});
+
+    // 2. Fetch URLs dynamically representing the Delta Share logical state
     DeltaSharingProfile profile = DeltaSharingProfile::FromConfig(context);
     DeltaSharingClient client(profile);
-    auto query_result = client.QueryTableMetadata(result->share_name, result->schema_name, result->table_name);
-    result->metadata = query_result.metadata;
+    
+    JsonValue predicate_hints;
+    auto query_result = client.QueryTable(share_name, schema_name, table_name, predicate_hints);
 
-    // Convert JsonValue to json for ParseDeltaSchema
-    auto* partition_cols_json = static_cast<const json*>(result->metadata.partition_columns.GetInternalPtr());
-    ParseDeltaSchema(result->metadata.schema_string, names, return_types, *partition_cols_json, result->partition_columns);
-    result->column_names = names;  // Store column names for projection mapping
-    return std::move(result);
-}
-
-static unique_ptr<GlobalTableFunctionState> ReadDeltaShareInit(
-    ClientContext &context,
-    TableFunctionInitInput &input) {
-
-    auto &bind_data = input.bind_data->CastNoConst<ReadDeltaShareBindData>();
-    // If predicate hints were pushed down during optimization, re-query with them
-
-    DeltaSharingProfile profile = DeltaSharingProfile::FromConfig(context);
-    DeltaSharingClient client(profile);
-    auto query_result = client.QueryTable(
-        bind_data.share_name,
-        bind_data.schema_name,
-        bind_data.table_name,
-        bind_data.predicate_hints
-    );
-    bind_data.files = query_result.files;
-    bind_data.metadata = query_result.metadata;
-    bind_data.current_idx = 0;
-
-    auto state = make_uniq<ReadDeltaShareGlobalState>();
-
-    // Capture projection info - map column IDs to column names
-    for (auto col_id : input.column_ids) {
-        if (col_id != COLUMN_IDENTIFIER_ROW_ID && col_id < bind_data.column_names.size()) {
-            state->projected_column_ids.push_back(col_id);
-            state->projected_columns.push_back(bind_data.column_names[col_id]);
-        }
+    vector<Value> parquet_urls;
+    vector<OpenFileInfo> open_file_infos;
+    for (const auto& file : query_result.files) {
+        parquet_urls.push_back(Value(file.url));
+        open_file_infos.push_back({file.url});
     }
 
-    // Store file count for MaxThreads
-    state->file_count = bind_data.files.size();
+    auto ds_file_list = shared_ptr<DeltaShareMultiFileList>(new DeltaShareMultiFileList(std::move(open_file_infos), std::move(query_result.files), std::move(query_result.metadata)));
 
-    // Pre-compute parquet filters once for all threads
-    if (!bind_data.filters.empty()) {
-        std::string parquet_filters = " WHERE ";
-        std::vector<std::string> parquet_predicates;
-        // Filter out partition columns
-        for (const auto &hint : bind_data.filters) {
-            if (parquet_predicates.empty() && (hint == "AND" || hint == "OR"))
-                continue;
-            std::string col_name = ExtractColumnNameFromHint(hint);
-            if (col_name.empty() || bind_data.partition_columns.find(col_name) == bind_data.partition_columns.end()) {
-                parquet_predicates.push_back(hint);
-            }
-        }
+    vector<Value> inputs_list;
+    inputs_list.push_back(Value::LIST(LogicalType::VARCHAR, parquet_urls));
 
-        // Build WHERE clause
-        size_t filter_count{0};
-        for (size_t i = 0; i < parquet_predicates.size(); i++) {
-            if (parquet_predicates[i] == "OR" || parquet_predicates[i] == "AND") continue;
-            if (i > 0) {
-                parquet_filters += ' ' + parquet_predicates[i - 1] + ' ';
-            }
-            parquet_filters += parquet_predicates[i];
-            ++filter_count;
-        }
-        if (filter_count) {
-            state->parquet_filters = parquet_filters;
+    // 3. Inject our MultiFileReader!
+    read_parquet.get_multi_file_reader = CreateDeltaShareMultiFileReader;
+
+    // 4. Delegate Bind to DuckDB's Native Parquet Scanner!
+    TableFunctionBindInput inner_input(inputs_list, input.named_parameters, input.input_table_types, input.input_table_names, read_parquet.function_info.get(), input.binder, read_parquet, input.ref);
+    auto bind_data = read_parquet.bind(context, inner_input, return_types, names);
+
+    // 5. Populate our MultiFileList so that the MultiFileReader has access to DeletionVectors and partition metadata!
+    auto &multi_file_bind = bind_data->Cast<MultiFileBindData>();
+    
+    // Disable inference to respect Delta Sharing strict json typings
+    multi_file_bind.file_options.auto_detect_hive_partitioning = false;
+    multi_file_bind.file_options.hive_partitioning = false;
+    multi_file_bind.file_options.union_by_name = false;
+    
+    for (const auto& col : ds_file_list->partition_columns) {
+        auto it = std::find(names.begin(), names.end(), col);
+        if (it == names.end()) {
+            names.push_back(col);
+            return_types.push_back(LogicalType::VARCHAR);
+            MultiFileColumnDefinition col_def(col, LogicalType::VARCHAR);
+            multi_file_bind.reader_bind.schema.push_back(col_def); 
         }
     }
+    
+    multi_file_bind.file_list = std::move(ds_file_list);
 
-    return std::move(state);
-}
-
-static unique_ptr<LocalTableFunctionState> ReadDeltaShareInitLocal(
-    ExecutionContext &context,
-    TableFunctionInitInput &input,
-    GlobalTableFunctionState *global_state) {
-
-    auto local_state = make_uniq<ReadDeltaShareLocalState>();
-    local_state->con = make_uniq<Connection>(*context.client.db);
-    return std::move(local_state);
-}
-
-static void ReadDeltaShareFunction(
-    ClientContext &context,
-    TableFunctionInput &data_p,
-    DataChunk &output) {
-
-    auto &bind_data = data_p.bind_data->CastNoConst<ReadDeltaShareBindData>();
-    auto &gstate = data_p.global_state->Cast<ReadDeltaShareGlobalState>();
-    auto &lstate = data_p.local_state->Cast<ReadDeltaShareLocalState>();
-
-    if (bind_data.files.empty()) {
-        output.SetCardinality(0);
-        return;
-    }
-
-    // Try to fetch from current result first
-    while (true) {
-        if (lstate.current_result) {
-            auto chunk = lstate.current_result->Fetch();
-            if (chunk) {
-                output.Reference(*chunk);
-                return;
-            }
-            lstate.current_result.reset();
-        }
-
-        // Get next file using atomic increment
-        idx_t file_idx = gstate.next_file_idx.fetch_add(1);
-        if (file_idx >= bind_data.files.size()) {
-            output.SetCardinality(0);
-            return;
-        }
-        lstate.current_file_idx = file_idx;
-
-        auto &file = bind_data.files[file_idx];
-
-        // Build column list for projection pushdown, excluding partition columns
-        std::string select_columns;
-        if (!gstate.projected_columns.empty()) {
-            std::vector<std::string> parquet_columns;
-            for (const auto &col : gstate.projected_columns) {
-                // Only include non-partition columns (partition values aren't in parquet files)
-                if (bind_data.partition_columns.find(col) == bind_data.partition_columns.end()) {
-                    parquet_columns.push_back("\"" + col + "\"");
-                }
-            }
-            if (!parquet_columns.empty()) {
-                for (size_t i = 0; i < parquet_columns.size(); i++) {
-                    if (i > 0) select_columns += ", ";
-                    select_columns += parquet_columns[i];
-                }
-            } else {
-                // All projected columns are partition columns - select minimal data
-                select_columns = "*";
-            }
-        } else {
-            select_columns = "*";
-        }
-
-        std::string query = "SELECT " + select_columns + " FROM read_parquet('" + file.url + "')";
-        if (!gstate.parquet_filters.empty()) {
-            query += gstate.parquet_filters;
-        }
-
-        try {
-            // Use per-thread connection for read_parquet
-            lstate.current_result = lstate.con->SendQuery(query);
-            if (lstate.current_result->HasError()) {
-                throw IOException("ReadDeltaShare error: read_parquet query failed. Reason: " + lstate.current_result->GetError());
-            }
-
-            // Return output from query
-            auto chunk = lstate.current_result->Fetch();
-            if (chunk) {
-                output.Reference(*chunk);
-                return;
-            }
-            lstate.current_result.reset();
-            // Continue loop to get next file
-        } catch (const std::exception &e) {
-            throw IOException("ReadDeltaShare error: failed to read parquet file from " + file.url + ": " + std::string(e.what()));
-        }
-    }
+    return bind_data;
 }
 
 // Section: delta_share_list_files scalar function
@@ -421,15 +297,22 @@ static void LoadInternal(ExtensionLoader &loader) {
     // Delta Sharing Functions
     TableFunction list("delta_share_list", {}, ListFunction, ListBind);
     list.varargs = LogicalType::VARCHAR;
-
-    TableFunction read_delta_share("delta_share_read",
-                                   {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR},
-                                   ReadDeltaShareFunction, ReadDeltaShareBind, ReadDeltaShareInit);
-    read_delta_share.init_local = ReadDeltaShareInitLocal;
-    read_delta_share.projection_pushdown = true;
-    read_delta_share.pushdown_complex_filter = ReadDeltaSharePushdownComplexFilter;
     loader.RegisterFunction(list);
-    loader.RegisterFunction(read_delta_share);
+
+    // Register our parquet_scan overlay!
+    auto &parquet_scan_entry = loader.GetTableFunction("parquet_scan");
+    TableFunction delta_share_read = parquet_scan_entry.functions.functions[0];
+
+    delta_share_read.name = "delta_share_read";
+    delta_share_read.arguments = {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR};
+    delta_share_read.get_multi_file_reader = CreateDeltaShareMultiFileReader;
+    // MUST override the bind to parse share/schema/table and inject DeltaShareMultiFileList!
+    delta_share_read.bind = ReadDeltaShareBind; 
+    
+    // Remove schema param to avoid duckdb binding errors
+    delta_share_read.named_parameters.erase("schema");
+    
+    loader.RegisterFunction(delta_share_read);
 
     // Scalar function: delta_share_list_files
     ScalarFunctionSet list_files_set("delta_share_list_files");

@@ -22,13 +22,14 @@ DuckDB extension for Delta Sharing protocol. By loading this extension, DuckDB c
 - `httpfs`
 - `read_parquet`
 
-## Limitations
+## Features & Modern Native Pipeline
 
-- `SELECT * FROM delta_share_read` will not work if the table has a partition column. This is a trade-off in allowing filter pruning for partition column. Users will have to specify columns.
-- `SELECT field FROM delta_share_read` is not yet optimized (single-threaded). `SELECT COUNT(*) delta_share_read` leverages DuckDB parallelism.
+- 🚀 Fully Native: Uses DuckDB `MultiFileReader` to bind directly to DuckDB's ultra-performant C++ `parquet_scan` operator.
+- Automatically handles dynamic partition columns using `constant_map` without complex query injections.
+- Deletion Vector framework initialized and mapped correctly for integration with external RoaringBitmap decode sources.
 
 ## Configuration
 
 This extension uses internal config to store Delta Sharing credentials. You can set configuration by doing SET or running DuckDB with environment variables.
-- `delta_share_endpoint`     → Base endpoint for Delta Sharing server (i.e. `localhost:8080/delta-sharing`).
-- `delta_share_bearer_token` → Bearer token without the `Bearer ` prefix
+- `delta_sharing_endpoint`     → Base endpoint for Delta Sharing server (i.e. `localhost:8080/delta-sharing`).
+- `delta_sharing_bearer_token` → Bearer token without the `Bearer ` prefix

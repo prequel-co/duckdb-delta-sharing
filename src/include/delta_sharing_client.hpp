@@ -47,6 +47,14 @@ struct Format {
     JsonValue options;
 };
 
+struct DeletionVector {
+    std::string storage_type;
+    std::string path_or_inline_dv;
+    int64_t offset;
+    int64_t size_in_bytes;
+    int64_t cardinality;
+};
+
 struct TableMetadata {
     std::string id;
     std::string name;
@@ -67,6 +75,8 @@ struct FileAction {
     int64_t version; // Optional
     int64_t timestamp; // Optional
     std::string expiration_timestamp; // Optional
+    bool has_deletion_vector = false;
+    DeletionVector deletion_vector;
 };
 
 // HTTP Response structure

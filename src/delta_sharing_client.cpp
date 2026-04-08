@@ -121,7 +121,7 @@ HttpResponse DeltaSharingClient::PerformRequest(
     std::string auth_header = "Authorization: Bearer " + profile_.bearer_token;
     headers = curl_slist_append(headers, auth_header.c_str());
     headers = curl_slist_append(headers, "Content-Type: application/json; charset=utf-8");
-    headers = curl_slist_append(headers, "delta-sharing-capabilities: responseformat=parquet");
+    headers = curl_slist_append(headers, "delta-sharing-capabilities: responseformat=delta,readerfeatures=deletionvectors,columnMapping");
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
 
     // Set write callback
@@ -433,26 +433,49 @@ DeltaSharingClient::QueryTableResult DeltaSharingClient::QueryTable(
         auto options = format_obj.value("options", json::object());
         result.metadata.format.options = JsonValue::FromInternal(&options);
 
-        // Remaining lines: files
+        // Remaining lines: actions (add, remove, cdc)
         for (size_t i = 2; i < lines.size(); i++) {
-            if (lines[i].Contains("file")) {
-                auto* line_json = static_cast<json*>(lines[i].GetInternalPtr());
+            auto* line_json = static_cast<json*>(lines[i].GetInternalPtr());
+            if (line_json->contains("file")) {
+                // responseformat=parquet
                 auto &file_obj = line_json->at("file");
                 FileAction file;
                 file.url = file_obj.at("url").get<std::string>();
                 file.id = file_obj.at("id").get<std::string>();
-
                 auto part_vals = file_obj.value("partitionValues", json::object());
                 file.partition_values = JsonValue::FromInternal(&part_vals);
-
                 file.size = file_obj.at("size").get<int64_t>();
-
                 auto stats = file_obj.value("stats", json::object());
                 file.stats = JsonValue::FromInternal(&stats);
-
                 file.version = file_obj.value("version", 0);
                 file.timestamp = file_obj.value("timestamp", 0);
                 file.expiration_timestamp = file_obj.value("expirationTimestamp", 0);
+                result.files.push_back(file);
+            } else if (line_json->contains("add")) {
+                // responseformat=delta
+                auto &add_obj = line_json->at("add");
+                FileAction file;
+                // In delta format, 'url' and 'id' are directly in the add action in some protocol versions, 
+                // but usually Delta Sharing wraps them.
+                file.url = add_obj.at("url").get<std::string>();
+                file.id = add_obj.at("id").get<std::string>();
+                auto part_vals = add_obj.value("partitionValues", json::object());
+                file.partition_values = JsonValue::FromInternal(&part_vals);
+                file.size = add_obj.at("size").get<int64_t>();
+                auto stats = add_obj.value("stats", json::object());
+                file.stats = JsonValue::FromInternal(&stats);
+                
+                // Handle deletion vectors
+                if (add_obj.contains("deletionVector")) {
+                    auto &dv_obj = add_obj.at("deletionVector");
+                    file.has_deletion_vector = true;
+                    file.deletion_vector.storage_type = dv_obj.at("storageType").get<std::string>();
+                    file.deletion_vector.path_or_inline_dv = dv_obj.at("pathOrInlineDv").get<std::string>();
+                    file.deletion_vector.offset = dv_obj.value("offset", 0);
+                    file.deletion_vector.size_in_bytes = dv_obj.at("sizeInBytes").get<int64_t>();
+                    file.deletion_vector.cardinality = dv_obj.at("cardinality").get<int64_t>();
+                }
+
                 result.files.push_back(file);
             }
         }
