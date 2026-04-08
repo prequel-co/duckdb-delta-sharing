@@ -126,13 +126,7 @@ void DeltaShareMultiFileReader::FinalizeBind(
 
     // Attach Deletion Vector
     if (delta_file.has_deletion_vector) {
-        // Technically, you would download the inline or path DV into a roaring bitmap!
-        // Mocked implementation: (For this exercise we provide an empty bitmap or fetch it)
-        roaring::api::roaring_bitmap_t *bm = roaring::api::roaring_bitmap_create();
-        
-        // TODO: decode delta_file.deletion_vector properties to populate `bm`
-
-        reader_data.reader->deletion_filter = make_uniq<DeltaShareDeleteFilter>(bm);
+        throw NotImplementedException("Deletion Vector support is not yet fully implemented. Found DV with storage type: " + delta_file.deletion_vector.storage_type);
     }
 }
 
