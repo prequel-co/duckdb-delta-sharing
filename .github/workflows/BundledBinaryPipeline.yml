@@ -1,0 +1,161 @@
+name: Bundled Binary Pipeline
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.head_ref || '' }}-${{ github.base_ref || '' }}-${{ github.ref != 'refs/heads/main' && github.sha || '' }}
+  cancel-in-progress: true
+
+jobs:
+  build-binaries:
+    name: Build Bundled Binaries
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            arch: linux_amd64
+            target: release
+            skip_pr: true
+          - os: ubuntu-latest
+            arch: linux_arm64
+            target: release
+            skip_pr: true
+          - os: macos-latest
+            arch: osx_amd64
+            target: release
+            skip_pr: true
+          - os: macos-latest
+            arch: osx_arm64
+            target: release
+            skip_pr: false
+          - os: windows-latest
+            arch: windows_amd64
+            target: release
+            skip_pr: true
+          - os: ubuntu-latest
+            arch: wasm_eh
+            target: wasm_eh
+            skip_pr: true
+
+    steps:
+      - name: Skip if PR and not targeted arch
+        if: github.event_name == 'pull_request' && matrix.skip_pr == true
+        run: |
+          echo "Skipping this target for PR build..."
+          exit 0
+
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup C++
+        if: matrix.os != 'windows-latest'
+        run: |
+          if [[ "${{ matrix.os }}" == "ubuntu-latest" ]]; then
+            sudo apt-get update && sudo apt-get install -y ninja-build libssl-dev libcurl4-openssl-dev
+          fi
+
+      - name: Setup vcpkg
+        run: |
+          git -C ./extension-ci-tools pull origin main
+
+      - name: Build Bundled Binary (Unix)
+        if: matrix.os != 'windows-latest' && matrix.arch != 'wasm_eh'
+        run: |
+          CORE_EXTENSIONS="httpfs;parquet;json;icu" \
+          BUILD_EXTENSIONS="httpfs;parquet;json;icu;duck_delta_share" \
+          VCPKG_BUILD=1 \
+          EXTENSION_STATIC_BUILD=1 \
+          OSX_BUILD_ARCH=${{ (matrix.arch == 'osx_amd64' && 'x86_64') || (matrix.arch == 'osx_arm64' && 'arm64') || '' }} \
+          make ${{ matrix.target }}
+        env:
+          GEN: ninja
+
+      - name: Build Bundled Binary (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: |
+          # Use cmake directly for Windows to ensure correct vcpkg integration
+          mkdir -p build/release
+          cmake -G "Ninja" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCORE_EXTENSIONS="httpfs;parquet;json;icu" \
+            -DBUILD_EXTENSIONS="httpfs;parquet;json;icu;duck_delta_share" \
+            -DEXTENSION_STATIC_BUILD=1 \
+            -DVCPKG_BUILD=1 \
+            -DDUCKDB_EXTENSION_CONFIGS="$(pwd)/extension_config.cmake" \
+            -S duckdb -B build/release
+          cmake --build build/release --target duckdb
+
+      - name: Build Bundled Binary (WASM)
+        if: matrix.arch == 'wasm_eh'
+        run: |
+          # WASM build requires emscripten
+          # This assumes emscripten is available or will be installed
+          # Reusing extension-ci-tools wasm target but ensuring shell build
+          echo "Building WASM Shell with Extensions..."
+          CORE_EXTENSIONS="httpfs;parquet;json;icu" \
+          BUILD_EXTENSIONS="httpfs;parquet;json;icu;duck_delta_share" \
+          make wasm_eh
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: duckdb-${{ matrix.arch }}
+          path: |
+            build/release/duckdb
+            build/release/duckdb.exe
+            build/wasm_eh/duckdb.js
+            build/wasm_eh/duckdb.wasm
+
+  bundle-macos-universal:
+    name: Create MacOS Universal Binary
+    needs: build-binaries
+    runs-on: macos-latest
+    if: github.event_name != 'pull_request'
+    steps:
+      - name: Download x64
+        uses: actions/download-artifact@v4
+        with:
+          name: duckdb-osx_amd64
+          path: bin_x64
+      - name: Download arm64
+        uses: actions/download-artifact@v4
+        with:
+          name: duckdb-osx_arm64
+          path: bin_arm64
+      - name: Create Universal Binary
+        run: |
+          lipo -create -output duckdb bin_x64/duckdb bin_arm64/duckdb
+          chmod +x duckdb
+      - name: Upload Universal Binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: duckdb-osx_universal
+          path: duckdb
+
+  e2e-test-bundled:
+    name: E2E Test (Bundled)
+    needs: build-binaries
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'run-e2e')
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download Linux Binary
+        uses: actions/download-artifact@v4
+        with:
+          name: duckdb-linux_amd64
+          path: build/release
+      - name: Run Bundled E2E Script
+        env:
+          DELTA_SHARING_ENDPOINT: ${{ secrets.DELTA_SHARING_ENDPOINT }}
+          DELTA_SHARING_BEARER_TOKEN: ${{ secrets.DELTA_SHARING_BEARER_TOKEN }}
+        run: |
+          chmod +x build/release/duckdb
+          chmod +x test/integration/run_e2e_bundled_tests.sh
+          ./test/integration/run_e2e_bundled_tests.sh

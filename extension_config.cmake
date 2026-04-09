@@ -7,5 +7,7 @@ duckdb_extension_load(duck_delta_share
 )
 
 # Any extra extensions that should be built
-# duckdb_extension_load(httpfs)
-# duckdb_extension_load(parquet)
+duckdb_extension_load(httpfs)
+duckdb_extension_load(parquet)
+duckdb_extension_load(json)
+duckdb_extension_load(icu)
