@@ -28,6 +28,9 @@ DeltaShareMultiFileList::DeltaShareMultiFileList(vector<OpenFileInfo> paths, vec
             this->partition_columns.insert(col.get<string>());
         }
     }
+
+    // Parse column mapping from schema string
+    this->column_mapping = DeltaSharingClient::ParseColumnMapping(this->metadata.schema_string);
 }
 
 // -----------------------------------------------------------------------------
@@ -76,16 +79,31 @@ void DeltaShareMultiFileReader::FinalizeBind(
         const vector<ColumnIndex> &global_column_ids, ClientContext &context,
         optional_ptr<MultiFileReaderGlobalState> global_state) {
 
-    // First do base bind
-    MultiFileReader::FinalizeBind(reader_data, file_options, options, global_columns, global_column_ids, context, global_state);
-
-    if (!global_state) return;
-    
     // Safety check because MultiFileReader intercepts bindings
-    if (!global_state->file_list) return;
+    if (!global_state || !global_state->file_list) {
+        MultiFileReader::FinalizeBind(reader_data, file_options, options, global_columns, global_column_ids, context, global_state);
+        return;
+    }
 
     // Get the DeltaShareMultiFileList
     auto *share_file_list = dynamic_cast<const DeltaShareMultiFileList*>(global_state->file_list.get());
+    
+    // If we have a column mapping, we need to temporarily map the global_columns to physical names
+    // so that the base MultiFileReader can match them against the Parquet file's schema.
+    if (share_file_list && !share_file_list->column_mapping.empty()) {
+        vector<MultiFileColumnDefinition> mapped_columns = global_columns;
+        for (auto &col : mapped_columns) {
+            auto it = share_file_list->column_mapping.find(col.name);
+            if (it != share_file_list->column_mapping.end()) {
+                col.name = it->second;
+            }
+        }
+        MultiFileReader::FinalizeBind(reader_data, file_options, options, mapped_columns, global_column_ids, context, global_state);
+    } else {
+        // No mapping needed or not a Delta Share file list
+        MultiFileReader::FinalizeBind(reader_data, file_options, options, global_columns, global_column_ids, context, global_state);
+    }
+
     if (!share_file_list) return;
 
     idx_t file_index = reader_data.reader->file_list_idx.GetIndex();
