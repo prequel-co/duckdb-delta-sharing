@@ -123,7 +123,8 @@ HttpResponse DeltaSharingClient::PerformRequest(
     headers = curl_slist_append(headers, "Content-Type: application/json");
     headers = curl_slist_append(headers, "User-Agent: delta-sharing-spark/3.1.0");
     headers = curl_slist_append(headers, "Accept: application/x-ndjson,application/json");
-    headers = curl_slist_append(headers, "delta-sharing-capabilities: responseFormat=delta,readerFeatures=deletionVectors,columnMapping");
+    headers = curl_slist_append(headers, "Delta-Sharing-Capabilities: responseformat=delta,readerfeatures=deletionvectors,columnmapping");
+    headers = curl_slist_append(headers, "Delta-Sharing-Reader-Features: deletionvectors,columnmapping");
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
 
     // Set write callback
@@ -381,9 +382,11 @@ DeltaSharingClient::QueryTableResult DeltaSharingClient::QueryTable(
     // Build POST request body
     json request_body;
     // Explicitly request delta format to handle Deletion Vectors correctly
-    request_body["responseFormat"] = "delta";
-    // Some implementations expect a capabilities array in the body as well
-    request_body["capabilities"] = json::array({"responseFormat=delta", "readerFeatures=deletionVectors", "readerFeatures=columnMapping"});
+    // Some newer versions of the protocol might prefer an object with 'delta'
+    json rf_obj;
+    rf_obj["format"] = "delta";
+    request_body["responseFormat"] = rf_obj;
+    request_body["predicateHints"] = json::array();
     if (!predicate_hints.IsEmpty()) {
         request_body["predicateHints"] = json::array();
         request_body["predicateHints"].push_back("string");

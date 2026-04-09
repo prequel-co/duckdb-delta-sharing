@@ -54,7 +54,7 @@ public:
 class DeltaShareDeleteFilter : public DeleteFilter {
 public:
     DeltaShareDeleteFilter(roaring::api::roaring_bitmap_t *dv) : dv(dv) {}
-
+    ~DeltaShareDeleteFilter() override;
     idx_t Filter(row_t start_row_index, idx_t count, SelectionVector &result_sel) override;
 
 private:
