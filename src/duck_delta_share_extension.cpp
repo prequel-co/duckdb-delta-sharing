@@ -14,7 +14,7 @@
 #include "duckdb/planner/expression/bound_function_expression.hpp"
 #include <nlohmann/json.hpp>
 #include <unordered_set>
-#include "duckdb/common/vector/list_vector.hpp"
+#include "duckdb/common/types/vector.hpp"
 #include "delta_share_multi_file_reader.hpp"
 #include "duckdb/catalog/catalog_entry/table_function_catalog_entry.hpp"
 #include "duckdb/common/multi_file/multi_file_function.hpp"
