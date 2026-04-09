@@ -123,8 +123,7 @@ HttpResponse DeltaSharingClient::PerformRequest(
     headers = curl_slist_append(headers, "Content-Type: application/json");
     headers = curl_slist_append(headers, "User-Agent: delta-sharing-spark/3.1.0");
     headers = curl_slist_append(headers, "Accept: application/x-ndjson,application/json");
-    headers = curl_slist_append(headers, "Delta-Sharing-Capabilities: responseformat=delta,readerfeatures=deletionvectors,columnmapping");
-    headers = curl_slist_append(headers, "Delta-Sharing-Reader-Features: deletionvectors,columnmapping");
+    headers = curl_slist_append(headers, "delta-sharing-capabilities: responseformat=delta;readerfeatures=deletionvectors,columnmapping");
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
 
     // Set write callback
@@ -381,11 +380,7 @@ DeltaSharingClient::QueryTableResult DeltaSharingClient::QueryTable(
 
     // Build POST request body
     json request_body;
-    // Explicitly request delta format to handle Deletion Vectors correctly
-    // Some newer versions of the protocol might prefer an object with 'delta'
-    json rf_obj;
-    rf_obj["format"] = "delta";
-    request_body["responseFormat"] = rf_obj;
+    request_body["responseFormat"] = "delta";
     request_body["predicateHints"] = json::array();
     if (!predicate_hints.IsEmpty()) {
         request_body["predicateHints"] = json::array();
@@ -413,85 +408,141 @@ DeltaSharingClient::QueryTableResult DeltaSharingClient::QueryTable(
     QueryTableResult result;
     try {
         auto lines = ParseNDJson(response.body);
-        if (lines.size() < 2) {
-            throw SerializationException("QueryTable error: malformed response body from server. ");
+        if (lines.empty()) {
+            throw SerializationException("QueryTable error: empty response body from server.");
         }
 
-        // First line: protocol - get internal json object
-        auto* line0_json = static_cast<json*>(lines[0].GetInternalPtr());
-        auto &protocol_obj = line0_json->at("protocol");
-        result.protocol.min_reader_version = protocol_obj.at("minReaderVersion").get<int>();
+        // Robust parsing: Find protocol and metadata in the first few lines
+        bool found_protocol = false;
+        bool found_metadata = false;
 
-        // Second line: metadata
-        auto* line1_json = static_cast<json*>(lines[1].GetInternalPtr());
-        auto &metadata_obj = line1_json->at("metaData");
-        result.metadata.id = metadata_obj.at("id").get<std::string>();
-        result.metadata.name = metadata_obj.value("name", "");
-        result.metadata.description = metadata_obj.value("description", "");
-        result.metadata.schema_string = metadata_obj.at("schemaString").get<std::string>();
-
-        // Convert json to JsonValue for member fields
-        auto partition_cols = metadata_obj.value("partitionColumns", json::array());
-        result.metadata.partition_columns = JsonValue::FromInternal(&partition_cols);
-
-        auto config = metadata_obj.value("configuration", json::object());
-        result.metadata.configuration = JsonValue::FromInternal(&config);
-
-        result.metadata.version = metadata_obj.value("version", 0);
-
-        auto &format_obj = metadata_obj.at("format");
-        result.metadata.format.provider = format_obj.at("provider").get<std::string>();
-
-        auto options = format_obj.value("options", json::object());
-        result.metadata.format.options = JsonValue::FromInternal(&options);
-
-        // Remaining lines: actions (add, remove, cdc)
-        for (size_t i = 2; i < lines.size(); i++) {
+        for (size_t i = 0; i < std::min<size_t>(lines.size(), 10); i++) {
             auto* line_json = static_cast<json*>(lines[i].GetInternalPtr());
-            if (line_json->contains("file")) {
-                // responseformat=parquet
-                auto &file_obj = line_json->at("file");
-                FileAction file;
-                file.url = file_obj.at("url").get<std::string>();
-                file.id = file_obj.at("id").get<std::string>();
-                auto part_vals = file_obj.value("partitionValues", json::object());
-                file.partition_values = JsonValue::FromInternal(&part_vals);
-                file.size = file_obj.at("size").get<int64_t>();
-                auto stats = file_obj.value("stats", json::object());
-                file.stats = JsonValue::FromInternal(&stats);
-                file.version = file_obj.value("version", 0);
-                file.timestamp = file_obj.value("timestamp", 0);
-                file.expiration_timestamp = file_obj.value("expirationTimestamp", 0);
-                result.files.push_back(file);
-            } else if (line_json->contains("add")) {
-                // responseformat=delta
-                auto &add_obj = line_json->at("add");
-                FileAction file;
-                // In delta format, 'url' and 'id' are directly in the add action in some protocol versions, 
-                // but usually Delta Sharing wraps them.
-                file.url = add_obj.at("url").get<std::string>();
-                file.id = add_obj.at("id").get<std::string>();
-                auto part_vals = add_obj.value("partitionValues", json::object());
-                file.partition_values = JsonValue::FromInternal(&part_vals);
-                file.size = add_obj.at("size").get<int64_t>();
-                auto stats = add_obj.value("stats", json::object());
-                file.stats = JsonValue::FromInternal(&stats);
-                
-                // Handle deletion vectors
-                if (add_obj.contains("deletionVector")) {
-                    auto &dv_obj = add_obj.at("deletionVector");
-                    file.has_deletion_vector = true;
-                    file.deletion_vector.storage_type = dv_obj.at("storageType").get<std::string>();
-                    file.deletion_vector.path_or_inline_dv = dv_obj.at("pathOrInlineDv").get<std::string>();
-                    file.deletion_vector.offset = dv_obj.value("offset", 0);
-                    file.deletion_vector.size_in_bytes = dv_obj.at("sizeInBytes").get<int64_t>();
-                    file.deletion_vector.cardinality = dv_obj.at("cardinality").get<int64_t>();
+            if (!line_json || !line_json->is_object()) continue;
+
+            if (!found_protocol && line_json->contains("protocol")) {
+                auto &protocol_obj = line_json->at("protocol");
+                if (protocol_obj.contains("deltaProtocol")) {
+                    auto &delta_proto = protocol_obj.at("deltaProtocol");
+                    result.protocol.min_reader_version = delta_proto.at("minReaderVersion").get<int>();
+                } else if (protocol_obj.contains("minReaderVersion")) {
+                    result.protocol.min_reader_version = protocol_obj.at("minReaderVersion").get<int>();
+                }
+                found_protocol = true;
+            } else if (!found_metadata && line_json->contains("metaData")) {
+                auto &metadata_top = line_json->at("metaData");
+                // In 'delta' format, the metadata is often nested in 'deltaMetadata'
+                const json* metadata_obj = &metadata_top;
+                if (metadata_top.contains("deltaMetadata")) {
+                    metadata_obj = &metadata_top.at("deltaMetadata");
                 }
 
-                result.files.push_back(file);
+                result.metadata.id = metadata_obj->at("id").get<std::string>();
+                result.metadata.schema_string = metadata_obj->at("schemaString").get<std::string>();
+                // Convert to JsonValue
+                auto part_cols = metadata_obj->at("partitionColumns");
+                result.metadata.partition_columns = JsonValue::FromInternal(&part_cols);
+                if (metadata_obj->contains("configuration")) {
+                    auto config = metadata_obj->at("configuration");
+                    result.metadata.configuration = JsonValue::FromInternal(&config);
+                }
+                auto &format_obj = metadata_obj->at("format");
+                result.metadata.format.provider = format_obj.at("provider").get<std::string>();
+                if (format_obj.contains("options")) {
+                    auto opts = format_obj.at("options");
+                    result.metadata.format.options = JsonValue::FromInternal(&opts);
+                }
+                found_metadata = true;
             }
         }
 
+        if (!found_protocol || !found_metadata) {
+            throw SerializationException("QueryTable error: missing protocol or metadata in response.");
+        }
+
+        // Action parsing
+        for (auto &line : lines) {
+            auto* line_json = static_cast<json*>(line.GetInternalPtr());
+            if (!line_json || !line_json->is_object()) continue;
+
+            if (line_json->contains("file")) {
+                auto &file_top = line_json->at("file");
+                
+                // Check for 'delta' format nested structure
+                if (file_top.contains("deltaSingleAction")) {
+                    auto &single_action = file_top.at("deltaSingleAction");
+                    if (single_action.contains("add")) {
+                        auto &add_obj = single_action.at("add");
+                        FileAction file;
+                        // In delta format, the field is 'path', not 'url'
+                        file.url = add_obj.at("path").get<std::string>();
+                        file.id = file_top.value("id", "");
+                        auto part_vals = add_obj.value("partitionValues", json::object());
+                        file.partition_values = JsonValue::FromInternal(&part_vals);
+                        file.size = add_obj.at("size").get<int64_t>();
+                        if (add_obj.contains("stats")) {
+                            auto s = add_obj.at("stats");
+                            file.stats = JsonValue::FromInternal(&s);
+                        }
+                        if (add_obj.contains("version")) {
+                            file.version = add_obj.at("version").get<int64_t>();
+                        }
+                        if (add_obj.contains("modificationTime")) {
+                            file.timestamp = add_obj.at("modificationTime").get<int64_t>();
+                        }
+                        
+                        // Handle deletion vectors
+                        if (add_obj.contains("deletionVector")) {
+                            file.has_deletion_vector = true;
+                            auto &dv_obj = add_obj.at("deletionVector");
+                            file.deletion_vector.storage_type = dv_obj.at("storageType").get<std::string>();
+                            file.deletion_vector.path_or_inline_dv = dv_obj.at("pathOrInlineDv").get<std::string>();
+                            file.deletion_vector.offset = dv_obj.value("offset", 0);
+                            file.deletion_vector.size_in_bytes = dv_obj.value("sizeInBytes", 0);
+                            file.deletion_vector.cardinality = dv_obj.value("cardinality", (int64_t)0);
+                        }
+                        result.files.push_back(file);
+                    }
+                } else {
+                    // Legacy parquet format (responseformat=parquet) or top-level file action
+                    FileAction file;
+                    file.url = file_top.at("url").get<std::string>();
+                    file.id = file_top.value("id", "");
+                    auto part_vals = file_top.value("partitionValues", json::object());
+                    file.partition_values = JsonValue::FromInternal(&part_vals);
+                    file.size = file_top.at("size").get<int64_t>();
+                    if (file_top.contains("stats")) {
+                        auto s = file_top.at("stats");
+                        file.stats = JsonValue::FromInternal(&s);
+                    }
+                    result.files.push_back(file);
+                }
+            } else if (line_json->contains("add")) {
+                // Alternative top-level add format (less common in Sharing but possible)
+                auto &add_obj = line_json->at("add");
+                FileAction file;
+                file.url = add_obj.contains("url") ? add_obj.at("url").get<std::string>() : add_obj.at("path").get<std::string>();
+                file.id = add_obj.value("id", "");
+                auto part_vals = add_obj.value("partitionValues", json::object());
+                file.partition_values = JsonValue::FromInternal(&part_vals);
+                file.size = add_obj.at("size").get<int64_t>();
+                if (add_obj.contains("stats")) {
+                    auto s = add_obj.at("stats");
+                    file.stats = JsonValue::FromInternal(&s);
+                }
+                // Handle deletion vectors
+                if (add_obj.contains("deletionVector")) {
+                    file.has_deletion_vector = true;
+                    auto &dv_obj = add_obj.at("deletionVector");
+                    file.deletion_vector.storage_type = dv_obj.at("storageType").get<std::string>();
+                    file.deletion_vector.path_or_inline_dv = dv_obj.at("pathOrInlineDv").get<std::string>();
+                    file.deletion_vector.offset = dv_obj.value("offset", 0);
+                    file.deletion_vector.size_in_bytes = dv_obj.value("sizeInBytes", 0);
+                    file.deletion_vector.cardinality = dv_obj.value("cardinality", (int64_t)0);
+                }
+                result.files.push_back(file);
+            }
+        }
     } catch (const std::exception &e) {
         throw SerializationException("QueryTable error: failed to parse response. " + std::string(e.what()));
     }
