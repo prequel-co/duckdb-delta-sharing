@@ -283,6 +283,150 @@ static unique_ptr<FunctionData> ReadDeltaShareBind(
     }
     
     multi_file_bind.file_list = std::move(ds_file_list);
+    multi_file_bind.multi_file_reader = make_uniq<DeltaShareMultiFileReader>();
+
+    return bind_data;
+}
+
+static unique_ptr<FunctionData> ReadDeltaShareCdfBind(
+    ClientContext &context,
+    TableFunctionBindInput &input,
+    vector<LogicalType> &return_types,
+    vector<string> &names) {
+
+    if (input.inputs.size() < 3) {
+        throw BinderException("ReadDeltaShareCdfBind usage: delta_share_change_data_feed('share_name', 'schema_name', 'table_name'[, startingVersion[, endingVersion]])");
+    }
+
+    string share_name = input.inputs[0].GetValue<string>();
+    string schema_name = input.inputs[1].GetValue<string>();
+    string table_name = input.inputs[2].GetValue<string>();
+
+    int64_t starting_version = -1;
+    int64_t ending_version = -1;
+    string starting_timestamp = "";
+    string ending_timestamp = "";
+
+    if (input.inputs.size() >= 4) {
+        if (input.inputs[3].type().id() == LogicalTypeId::TIMESTAMP || input.inputs[3].type().id() == LogicalTypeId::TIMESTAMP_TZ) {
+            starting_timestamp = input.inputs[3].ToString();
+            std::replace(starting_timestamp.begin(), starting_timestamp.end(), ' ', 'T');
+            if (starting_timestamp.find('Z') == string::npos && starting_timestamp.find('+') == string::npos) {
+                starting_timestamp += "Z";
+            }
+        } else {
+            starting_version = input.inputs[3].GetValue<int64_t>();
+        }
+    } else {
+        starting_version = 0; // Default to 0
+    }
+
+    if (input.inputs.size() >= 5) {
+        if (input.inputs[4].type().id() == LogicalTypeId::TIMESTAMP || input.inputs[4].type().id() == LogicalTypeId::TIMESTAMP_TZ) {
+            ending_timestamp = input.inputs[4].ToString();
+            std::replace(ending_timestamp.begin(), ending_timestamp.end(), ' ', 'T');
+            if (ending_timestamp.find('Z') == string::npos && ending_timestamp.find('+') == string::npos) {
+                ending_timestamp += "Z";
+            }
+        } else {
+            ending_version = input.inputs[4].GetValue<int64_t>();
+        }
+    }
+
+    DeltaSharingProfile profile = DeltaSharingProfile::FromConfig(context);
+    DeltaSharingClient client(profile);
+    
+    auto query_result = client.QueryTableChanges(share_name, schema_name, table_name, starting_version, ending_version, starting_timestamp, ending_timestamp);
+
+    // CDF always has these 3 columns
+    DeltaSharingClient::ParseSparkSchema(query_result.metadata.schema_string, return_types, names);
+    
+    // Add partition columns
+    auto* partition_cols_json = static_cast<json*>(query_result.metadata.partition_columns.GetInternalPtr());
+    for (const auto& col_json : *partition_cols_json) {
+        string col = col_json.get<string>();
+        if (std::find(names.begin(), names.end(), col) == names.end()) {
+            names.push_back(col);
+            return_types.push_back(LogicalType::VARCHAR);
+        }
+    }
+
+    // Add CDF Metadata Columns
+    vector<string> cdf_cols = {"_change_type", "_commit_version", "_commit_timestamp"};
+    vector<LogicalType> cdf_types = {LogicalType::VARCHAR, LogicalType::BIGINT, LogicalType::TIMESTAMP};
+    
+    for (size_t i = 0; i < cdf_cols.size(); i++) {
+        if (std::find(names.begin(), names.end(), cdf_cols[i]) == names.end()) {
+            names.push_back(cdf_cols[i]);
+            return_types.push_back(cdf_types[i]);
+        }
+    }
+
+    if (query_result.files.empty()) {
+        auto ds_file_list = shared_ptr<DeltaShareMultiFileList>(new DeltaShareMultiFileList({}, {}, std::move(query_result.metadata)));
+        auto bind_data = make_uniq<MultiFileBindData>();
+        bind_data->types = return_types;
+        bind_data->names = names;
+        bind_data->columns = MultiFileColumnDefinition::ColumnsFromNamesAndTypes(names, return_types);
+        bind_data->reader_bind.schema = bind_data->columns;
+        bind_data->file_list = std::move(ds_file_list);
+        bind_data->multi_file_reader = make_uniq<DeltaShareMultiFileReader>();
+        bind_data->interface = make_uniq<DeltaShareEmptyInterface>();
+        bind_data->bind_data = make_uniq<TableFunctionData>();
+        return std::move(bind_data);
+    }
+
+    vector<Value> parquet_urls;
+    vector<OpenFileInfo> open_file_infos;
+    
+    // Process actions to synthesize CDF columns if needed
+    for (auto& file : query_result.files) {
+        parquet_urls.push_back(Value(file.url));
+        open_file_infos.push_back({file.url});
+        
+        if (file.cdf_action_type == "add" || file.cdf_action_type == "remove") {
+            auto* part_vals_json = static_cast<json*>(file.partition_values.GetInternalPtr());
+            (*part_vals_json)["_change_type"] = (file.cdf_action_type == "add") ? "insert" : "delete";
+            (*part_vals_json)["_commit_version"] = file.version;
+            // Delta Lake timestamps are in milliseconds, DuckDB TIMESTAMP is in microseconds
+            (*part_vals_json)["_commit_timestamp"] = file.timestamp * 1000;
+        }
+    }
+
+    auto ds_file_list = shared_ptr<DeltaShareMultiFileList>(new DeltaShareMultiFileList(std::move(open_file_infos), std::move(query_result.files), std::move(query_result.metadata)));
+
+    // Delegate to read_parquet
+    auto &catalog = Catalog::GetSystemCatalog(context);
+    auto &func_entry = catalog.GetEntry<TableFunctionCatalogEntry>(context, DEFAULT_SCHEMA, "read_parquet");
+    auto read_parquet = func_entry.functions.GetFunctionByArguments(context, {LogicalType::LIST(LogicalType::VARCHAR)});
+
+    vector<Value> inputs_list;
+    inputs_list.push_back(Value::LIST(LogicalType::VARCHAR, parquet_urls));
+
+    TableFunctionBindInput inner_input(inputs_list, input.named_parameters, input.input_table_types, input.input_table_names, read_parquet.function_info.get(), input.binder, read_parquet, input.ref);
+    auto bind_data = read_parquet.bind(context, inner_input, return_types, names);
+
+    auto &multi_file_bind = bind_data->Cast<MultiFileBindData>();
+    multi_file_bind.file_options.auto_detect_hive_partitioning = false;
+    multi_file_bind.file_options.hive_partitioning = false;
+    multi_file_bind.file_options.union_by_name = false;
+
+    // Ensure all columns (including CDF and Partition ones) are in the schema
+    for (size_t i = 0; i < names.size(); i++) {
+        bool found = false;
+        for (const auto& col_def : multi_file_bind.reader_bind.schema) {
+            if (col_def.name == names[i]) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            multi_file_bind.reader_bind.schema.push_back(MultiFileColumnDefinition(names[i], return_types[i]));
+        }
+    }
+    
+    multi_file_bind.file_list = std::move(ds_file_list);
+    multi_file_bind.multi_file_reader = make_uniq<DeltaShareMultiFileReader>();
 
     return bind_data;
 }
@@ -426,7 +570,27 @@ static void LoadInternal(ExtensionLoader &loader) {
 
     loader.RegisterFunction(delta_share_read);
 
-    // Scalar function: delta_share_list_files
+    // CDF Function
+    TableFunctionSet delta_share_cdf("delta_share_change_data_feed");
+    TableFunction base_cdf = base_read;
+    base_cdf.bind = ReadDeltaShareCdfBind;
+
+    // 3-arg (starts from version 0)
+    TableFunction cdf_3arg = base_cdf;
+    cdf_3arg.arguments = {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR};
+    delta_share_cdf.AddFunction(cdf_3arg);
+
+    // 4-arg (start version or timestamp)
+    TableFunction cdf_4arg = base_cdf;
+    cdf_4arg.arguments = {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::ANY};
+    delta_share_cdf.AddFunction(cdf_4arg);
+
+    // 5-arg (start and end version/timestamp)
+    TableFunction cdf_5arg = base_cdf;
+    cdf_5arg.arguments = {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::ANY, LogicalType::ANY};
+    delta_share_cdf.AddFunction(cdf_5arg);
+
+    loader.RegisterFunction(delta_share_cdf);
     ScalarFunctionSet list_files_set("delta_share_list_files");
 
     // 3-argument version (no predicate hints)

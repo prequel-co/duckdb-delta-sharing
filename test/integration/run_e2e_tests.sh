@@ -77,5 +77,19 @@ SELECT count(*) as row_count FROM delta_share_read('${SHARE}', '${SCHEMA}', 'ord
 "
 $DUCKDB_PATH -unsigned -c "$QUERY_EMPTY"
 
+echo ""
+echo "Testing Change Data Feed (CDF)..."
+echo "---------------------------------------------------------"
+
+QUERY_CDF="
+LOAD '${EXT_PATH}';
+LOAD httpfs;
+SET delta_sharing_endpoint='${DB_ENDPOINT}';
+SET delta_sharing_bearer_token='${DB_TOKEN}';
+
+SELECT * FROM delta_share_change_data_feed('${SHARE}', '${SCHEMA}', 'orders', 0) LIMIT 10;
+"
+$DUCKDB_PATH -unsigned -c "$QUERY_CDF"
+
 echo "---------------------------------------------------------"
 echo "Integration Test completed successfully."
