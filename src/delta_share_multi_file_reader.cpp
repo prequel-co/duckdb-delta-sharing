@@ -1,6 +1,9 @@
 #include "delta_share_multi_file_reader.hpp"
 #include "duck_delta_share_functions.hpp" // For ParseDeltaSchema if needed
 #include "duckdb/common/types/value.hpp"
+#include "duckdb/common/types/selection_vector.hpp"
+#include "z85.hpp"
+#include "roaring/roaring.h"
 
 namespace duckdb {
 
@@ -9,6 +12,12 @@ namespace duckdb {
 // -----------------------------------------------------------------------------
 
 DeltaShareMultiFileList::~DeltaShareMultiFileList() = default;
+
+DeltaShareDeleteFilter::~DeltaShareDeleteFilter() {
+    if (dv) {
+        roaring::api::roaring_bitmap_free(dv);
+    }
+}
 
 DeltaShareMultiFileList::DeltaShareMultiFileList(vector<OpenFileInfo> paths, vector<FileAction> files, TableMetadata metadata) 
     : SimpleMultiFileList(std::move(paths)), files(std::move(files)), metadata(std::move(metadata)) {
@@ -27,14 +36,12 @@ DeltaShareMultiFileList::DeltaShareMultiFileList(vector<OpenFileInfo> paths, vec
 
 idx_t DeltaShareDeleteFilter::Filter(row_t start_row_index, idx_t count, SelectionVector &result_sel) {
     if (count == 0) return 0;
-    result_sel.Initialize(STANDARD_VECTOR_SIZE);
-
     idx_t current_select = 0;
     for (idx_t i = 0; i < count; i++) {
         auto row_id = i + start_row_index;
 
         // Roaring bitmap contains DELETED rows.
-        bool is_deleted = roaring::api::roaring_bitmap_contains(dv, row_id);
+        bool is_deleted = roaring::api::roaring_bitmap_contains(dv, (uint32_t)row_id);
         
         // Select it only if it is NOT deleted
         if (!is_deleted) {
@@ -126,7 +133,30 @@ void DeltaShareMultiFileReader::FinalizeBind(
 
     // Attach Deletion Vector
     if (delta_file.has_deletion_vector) {
-        throw NotImplementedException("Deletion Vector support is not yet fully implemented. Found DV with storage type: " + delta_file.deletion_vector.storage_type);
+        const auto &dv_meta = delta_file.deletion_vector;
+        roaring::api::roaring_bitmap_t *dv_bitmap = nullptr;
+
+        if (dv_meta.storage_type == "u") { // Inline (Z85)
+            try {
+                auto decoded = Z85::Decode(dv_meta.path_or_inline_dv);
+                // Delta DVs are serialized as: 4 bytes (size) + roaring bitmap in portable format.
+                if (decoded.size() > 4) {
+                    dv_bitmap = roaring::api::roaring_bitmap_portable_deserialize((const char*)decoded.data() + 4);
+                } else if (decoded.size() > 0) {
+                     // Some versions might omit the size header if it's raw
+                     dv_bitmap = roaring::api::roaring_bitmap_portable_deserialize((const char*)decoded.data());
+                }
+            } catch (const std::exception &e) {
+                throw IOException("Failed to decode inline Deletion Vector: " + std::string(e.what()));
+            }
+        } else {
+            // Remote DV - will require an HTTP fetch. For now, we throw until the client can fetch it.
+            throw NotImplementedException("Remote Deletion Vectors (storageType: " + dv_meta.storage_type + ") are not yet supported.");
+        }
+
+        if (dv_bitmap) {
+            reader_data.reader->deletion_filter = make_uniq<DeltaShareDeleteFilter>(dv_bitmap);
+        }
     }
 }
 
