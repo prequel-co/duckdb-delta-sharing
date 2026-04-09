@@ -78,6 +78,9 @@ struct FileAction {
     std::string expiration_timestamp; // Optional
     bool has_deletion_vector = false;
     DeletionVector deletion_vector;
+    
+    // CDF specific
+    std::string cdf_action_type; // "add", "cdf", "remove"
 };
 
 // HTTP Response structure
@@ -141,6 +144,16 @@ public:
         int64_t version = -1,
         const std::string &timestamp = "");
 
+    // Query table changes (CDF)
+    QueryTableResult QueryTableChanges(
+        const std::string &share_name,
+        const std::string &schema_name,
+        const std::string &table_name,
+        int64_t starting_version = -1,
+        int64_t ending_version = -1,
+        const std::string &starting_timestamp = "",
+        const std::string &ending_timestamp = "");
+
 private:
     DeltaSharingProfile profile_;
     void *curl_; // CURL handle (opaque pointer to avoid including curl.h in header)
@@ -154,6 +167,12 @@ private:
 
     // Build URL with query parameters
     std::string BuildUrl(const std::string &path, const std::string &query_params = "");
+
+    // Helper to parse a FileAction from a JSON object (add, cdf, remove, or file)
+    void ParseFileAction(const JsonValue &obj, FileAction &file, const std::string &action_type);
+
+    // Helper to parse protocol and metadata from response lines
+    bool ParseProtocolAndMetadata(const std::vector<JsonValue> &lines, Protocol &protocol, TableMetadata &metadata, bool &found_protocol, bool &found_metadata);
 
     // Parse newline-delimited JSON response
     std::vector<JsonValue> ParseNDJson(const std::string &response);
