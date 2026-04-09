@@ -346,7 +346,8 @@ DeltaSharingClient::QueryTableResult DeltaSharingClient::QueryTable(
     const std::string &table_name,
     const JsonValue &predicate_hints,
     int64_t limit_hint,
-    int64_t version) {
+    int64_t version,
+    const std::string &timestamp) {
 
     // Build POST request body
     json request_body;
@@ -362,6 +363,9 @@ DeltaSharingClient::QueryTableResult DeltaSharingClient::QueryTable(
     }
     if (version > 0) {
         request_body["version"] = version;
+    }
+    if (!timestamp.empty()) {
+        request_body["timestamp"] = timestamp;
     }
 
     std::string post_data = request_body.dump();
@@ -607,6 +611,63 @@ JsonValue DeltaSharingClient::PerformPaginatedGet(const std::string &path, int m
     }
 
     return JsonValue::FromInternal(&all_items);
+}
+
+void DeltaSharingClient::ParseSparkSchema(const std::string &schema_string, vector<LogicalType> &return_types, vector<string> &names) {
+    try {
+        if (schema_string.empty()) return;
+
+        json schema_json = json::parse(schema_string);
+        if (!schema_json.contains("fields") || !schema_json.at("fields").is_array()) {
+            return;
+        }
+
+        auto &fields = schema_json.at("fields");
+        for (auto &field : fields) {
+            if (!field.contains("name") || !field.contains("type")) continue;
+
+            string name = field.at("name").get<string>();
+            json type_json = field.at("type");
+            string type = "";
+            if (type_json.is_string()) {
+                type = type_json.get<string>();
+            } else {
+                // Complex or nested types not fully supported yet in empty scan, but we'll try to get the type name if it's an object
+                if (type_json.is_object() && type_json.contains("type")) {
+                    type = type_json.at("type").dump();
+                }
+            }
+
+            names.push_back(name);
+            if (type == "string") {
+                return_types.push_back(LogicalType::VARCHAR);
+            } else if (type == "integer") {
+                return_types.push_back(LogicalType::INTEGER);
+            } else if (type == "long") {
+                return_types.push_back(LogicalType::BIGINT);
+            } else if (type == "double") {
+                return_types.push_back(LogicalType::DOUBLE);
+            } else if (type == "float") {
+                return_types.push_back(LogicalType::FLOAT);
+            } else if (type == "boolean") {
+                return_types.push_back(LogicalType::BOOLEAN);
+            } else if (type == "timestamp") {
+                return_types.push_back(LogicalType::TIMESTAMP);
+            } else if (type == "date") {
+                return_types.push_back(LogicalType::DATE);
+            } else if (type == "binary") {
+                return_types.push_back(LogicalType::BLOB);
+            } else if (type == "byte") {
+                return_types.push_back(LogicalType::TINYINT);
+            } else if (type == "short") {
+                return_types.push_back(LogicalType::SMALLINT);
+            } else {
+                return_types.push_back(LogicalType::VARCHAR); // Default fallback
+            }
+        }
+    } catch (...) {
+        // Fallback: names/types will stay as they were (likely empty)
+    }
 }
 
 } // namespace duckdb

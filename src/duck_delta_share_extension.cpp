@@ -17,6 +17,7 @@
 #include "duckdb/common/vector/list_vector.hpp"
 #include "delta_share_multi_file_reader.hpp"
 #include "duckdb/catalog/catalog_entry/table_function_catalog_entry.hpp"
+#include "duckdb/common/multi_file/multi_file_function.hpp"
 
 namespace duckdb {
 
@@ -118,6 +119,63 @@ static void ListFunction(
 // ReadDeltaShare - MultiFileReader Parquet Overlay Pattern
 // -----------------------------------------------------------------------------
 
+struct DeltaShareEmptyInterface : public MultiFileReaderInterface {
+	virtual ~DeltaShareEmptyInterface() {}
+	unique_ptr<MultiFileReaderInterface> Copy() override {
+		return make_uniq<DeltaShareEmptyInterface>();
+	}
+	void InitializeInterface(ClientContext &context, MultiFileReader &reader, MultiFileList &file_list) override {}
+	unique_ptr<BaseFileReaderOptions> InitializeOptions(ClientContext &context, optional_ptr<TableFunctionInfo> info) override {
+		return make_uniq<BaseFileReaderOptions>();
+	}
+	bool ParseCopyOption(ClientContext &context, const string &key, const vector<Value> &values, BaseFileReaderOptions &options,
+	                     vector<string> &expected_names, vector<LogicalType> &expected_types) override {
+		return false;
+	}
+	bool ParseOption(ClientContext &context, const string &key, const Value &val, MultiFileOptions &file_options,
+	                 BaseFileReaderOptions &options) override {
+		return false;
+	}
+	unique_ptr<TableFunctionData> InitializeBindData(MultiFileBindData &multi_file_data,
+	                                                 unique_ptr<BaseFileReaderOptions> options) override {
+		return make_uniq<TableFunctionData>();
+	}
+	void BindReader(ClientContext &context, vector<LogicalType> &return_types, vector<string> &names,
+	                MultiFileBindData &bind_data) override {}
+	unique_ptr<GlobalTableFunctionState> InitializeGlobalState(ClientContext &context, MultiFileBindData &bind_data,
+	                                                         MultiFileGlobalState &global_state) override {
+		return make_uniq<GlobalTableFunctionState>();
+	}
+	unique_ptr<LocalTableFunctionState> InitializeLocalState(ExecutionContext &, GlobalTableFunctionState &) override {
+		return make_uniq<LocalTableFunctionState>();
+	}
+	shared_ptr<BaseFileReader> CreateReader(ClientContext &context, GlobalTableFunctionState &gstate, BaseUnionData &union_data,
+	                                      const MultiFileBindData &bind_data_p) override {
+		return nullptr;
+	}
+	shared_ptr<BaseFileReader> CreateReader(ClientContext &context, GlobalTableFunctionState &gstate, const OpenFileInfo &file,
+	                                      idx_t file_idx, const MultiFileBindData &bind_data) override {
+		return nullptr;
+	}
+	void GetVirtualColumns(ClientContext &context, MultiFileBindData &bind_data, virtual_column_map_t &result) override {
+		// No virtual columns for empty share
+	}
+};
+
+static table_function_t base_parquet_scan_function = nullptr;
+
+static void ReadDeltaShareFunctionWrapper(ClientContext &context, TableFunctionInput &data_p, DataChunk &output) {
+    auto &bind_data = data_p.bind_data->Cast<MultiFileBindData>();
+    auto &ds_file_list = bind_data.file_list->Cast<DeltaShareMultiFileList>();
+    if (ds_file_list.files.empty()) {
+        output.SetCardinality(0);
+        return;
+    }
+    if (base_parquet_scan_function) {
+        base_parquet_scan_function(context, data_p, output);
+    }
+}
+
 static unique_ptr<MultiFileReader> CreateDeltaShareMultiFileReader(const TableFunction &function) {
     return make_uniq<DeltaShareMultiFileReader>();
 }
@@ -129,7 +187,7 @@ static unique_ptr<FunctionData> ReadDeltaShareBind(
     vector<string> &names) {
 
     if (input.inputs.size() < 3) {
-        throw BinderException("ReadDeltaShareBind usage: delta_share_read('share_name', 'schema_name', 'table_name')");
+        throw BinderException("ReadDeltaShareBind usage: delta_share_read('share_name', 'schema_name', 'table_name'[, timestamp])");
     }
 
     string share_name = input.inputs[0].GetValue<string>();
@@ -148,7 +206,44 @@ static unique_ptr<FunctionData> ReadDeltaShareBind(
     DeltaSharingClient client(profile);
     
     JsonValue predicate_hints;
-    auto query_result = client.QueryTable(share_name, schema_name, table_name, predicate_hints);
+    string timestamp_str = "";
+    if (input.inputs.size() >= 4) {
+        auto val = input.inputs[3];
+        if (!val.IsNull()) {
+            timestamp_str = val.ToString();
+            // Convert DuckDB format "YYYY-MM-DD HH:MM:SS" to ISO 8601 "YYYY-MM-DDTHH:MM:SSZ"
+            std::replace(timestamp_str.begin(), timestamp_str.end(), ' ', 'T');
+            if (timestamp_str.find('Z') == string::npos && timestamp_str.find('+') == string::npos) {
+                timestamp_str += "Z";
+            }
+        }
+    }
+    
+    auto query_result = client.QueryTable(share_name, schema_name, table_name, predicate_hints, -1, -1, timestamp_str);
+
+    if (query_result.files.empty()) {
+        DeltaSharingClient::ParseSparkSchema(query_result.metadata.schema_string, return_types, names);
+        // Still handle partition columns
+        auto* partition_cols_json = static_cast<json*>(query_result.metadata.partition_columns.GetInternalPtr());
+        for (const auto& col_json : *partition_cols_json) {
+            string col = col_json.get<string>();
+            if (std::find(names.begin(), names.end(), col) == names.end()) {
+                names.push_back(col);
+                return_types.push_back(LogicalType::VARCHAR);
+            }
+        }
+        auto ds_file_list = shared_ptr<DeltaShareMultiFileList>(new DeltaShareMultiFileList({}, {}, std::move(query_result.metadata)));
+        auto bind_data = make_uniq<MultiFileBindData>();
+        bind_data->types = return_types;
+        bind_data->names = names;
+        bind_data->columns = MultiFileColumnDefinition::ColumnsFromNamesAndTypes(names, return_types);
+        bind_data->reader_bind.schema = bind_data->columns;
+        bind_data->file_list = std::move(ds_file_list);
+        bind_data->multi_file_reader = make_uniq<DeltaShareMultiFileReader>();
+        bind_data->interface = make_uniq<DeltaShareEmptyInterface>();
+        bind_data->bind_data = make_uniq<TableFunctionData>();
+        return std::move(bind_data);
+    }
 
     vector<Value> parquet_urls;
     vector<OpenFileInfo> open_file_infos;
@@ -301,17 +396,34 @@ static void LoadInternal(ExtensionLoader &loader) {
 
     // Register our parquet_scan overlay!
     auto &parquet_scan_entry = loader.GetTableFunction("parquet_scan");
-    TableFunction delta_share_read = parquet_scan_entry.functions.functions[0];
+    TableFunction base_read = parquet_scan_entry.functions.functions[0];
+    base_parquet_scan_function = base_read.function;
 
-    delta_share_read.name = "delta_share_read";
-    delta_share_read.arguments = {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR};
-    delta_share_read.get_multi_file_reader = CreateDeltaShareMultiFileReader;
-    // MUST override the bind to parse share/schema/table and inject DeltaShareMultiFileList!
-    delta_share_read.bind = ReadDeltaShareBind; 
+    base_read.function = ReadDeltaShareFunctionWrapper;
+    base_read.get_multi_file_reader = CreateDeltaShareMultiFileReader;
+    base_read.bind = ReadDeltaShareBind; 
+    base_read.named_parameters.erase("schema");
+
+    TableFunctionSet delta_share_read("delta_share_read");
     
-    // Remove schema param to avoid duckdb binding errors
-    delta_share_read.named_parameters.erase("schema");
-    
+    // 3-argument version
+    TableFunction read_3arg = base_read;
+    read_3arg.name = "delta_share_read";
+    read_3arg.arguments = {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR};
+    delta_share_read.AddFunction(read_3arg);
+
+    // 4-argument version (Time Travel - TIMESTAMP)
+    TableFunction read_4arg_ts = base_read;
+    read_4arg_ts.name = "delta_share_read";
+    read_4arg_ts.arguments = {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::TIMESTAMP};
+    delta_share_read.AddFunction(read_4arg_ts);
+
+    // 4-argument version (Time Travel - TIMESTAMPTZ)
+    TableFunction read_4arg_tstz = base_read;
+    read_4arg_tstz.name = "delta_share_read";
+    read_4arg_tstz.arguments = {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::TIMESTAMP_TZ};
+    delta_share_read.AddFunction(read_4arg_tstz);
+
     loader.RegisterFunction(delta_share_read);
 
     // Scalar function: delta_share_list_files

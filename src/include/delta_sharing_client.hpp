@@ -104,6 +104,9 @@ public:
     // Parse Spark SQL JSON schema and extract logical -> physical column mapping
     static std::unordered_map<std::string, std::string> ParseColumnMapping(const std::string &schema_string);
 
+    // Parse Spark SQL JSON schema to DuckDB types and names
+    static void ParseSparkSchema(const std::string &schema_string, vector<LogicalType> &return_types, vector<string> &names);
+
     // List schemas in a share - returns JSON array of items
     JsonValue ListSchemas(const std::string &share_name, int max_results = -1, const std::string &page_token = "");
 
@@ -135,7 +138,8 @@ public:
         const std::string &table_name,
         const JsonValue &predicate_hints = JsonValue::Object(),
         int64_t limit_hint = -1,
-        int64_t version = -1);
+        int64_t version = -1,
+        const std::string &timestamp = "");
 
 private:
     DeltaSharingProfile profile_;
