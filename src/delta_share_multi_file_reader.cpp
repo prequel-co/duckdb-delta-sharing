@@ -154,7 +154,7 @@ void DeltaShareMultiFileReader::FinalizeBind(
         const auto &dv_meta = delta_file.deletion_vector;
         roaring::api::roaring_bitmap_t *dv_bitmap = nullptr;
 
-        if (dv_meta.storage_type == "u") { // Inline (Z85)
+        if (dv_meta.storage_type == "u" || dv_meta.storage_type == "i") { // Inline (Z85)
             try {
                 auto decoded = Z85::Decode(dv_meta.path_or_inline_dv);
                 // Delta DVs are serialized as: 4 bytes (size) + roaring bitmap in portable format.

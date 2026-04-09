@@ -84,6 +84,7 @@ struct FileAction {
 struct HttpResponse {
     long status_code;
     std::string body;
+    std::map<std::string, std::string> headers;
     std::string error_message;
     bool success;
 };
@@ -152,6 +153,9 @@ private:
 
     // Parse newline-delimited JSON response
     std::vector<JsonValue> ParseNDJson(const std::string &response);
+
+    // Consolidated helper for paginated JSON GET requests
+    JsonValue PerformPaginatedGet(const std::string &path, int max_results, const std::string &page_token);
 };
 
 } // namespace duckdb
