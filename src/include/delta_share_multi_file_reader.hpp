@@ -21,6 +21,10 @@ public:
     vector<FileAction> files;
     TableMetadata metadata;
 
+    unique_ptr<MultiFileList> Copy() const override {
+        return make_uniq<DeltaShareMultiFileList>(paths, files, metadata);
+    }
+
     // Cache the parsed partition column names
     std::unordered_set<std::string> partition_columns;
     

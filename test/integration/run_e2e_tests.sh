@@ -49,5 +49,33 @@ SELECT * FROM delta_share_read('${SHARE}', '${SCHEMA}', 'orders');
 "
 $DUCKDB_PATH -unsigned -c "$QUERY_ORDERS"
 
+echo ""
+echo "Testing Time Travel with delta_share_read..."
+echo "---------------------------------------------------------"
+
+QUERY_TIME_TRAVEL="
+LOAD '${EXT_PATH}';
+LOAD httpfs;
+SET delta_sharing_endpoint='${DB_ENDPOINT}';
+SET delta_sharing_bearer_token='${DB_TOKEN}';
+
+SELECT count(*) as row_count FROM delta_share_read('${SHARE}', '${SCHEMA}', 'orders', timestamp '2026-04-08 18:57:48');
+"
+$DUCKDB_PATH -unsigned -c "$QUERY_TIME_TRAVEL"
+
+echo ""
+echo "Testing Empty Result Set (Time Travel to near-empty version)..."
+echo "---------------------------------------------------------"
+
+QUERY_EMPTY="
+LOAD '${EXT_PATH}';
+LOAD httpfs;
+SET delta_sharing_endpoint='${DB_ENDPOINT}';
+SET delta_sharing_bearer_token='${DB_TOKEN}';
+
+SELECT count(*) as row_count FROM delta_share_read('${SHARE}', '${SCHEMA}', 'orders', timestamp '2026-04-08 18:57:40');
+"
+$DUCKDB_PATH -unsigned -c "$QUERY_EMPTY"
+
 echo "---------------------------------------------------------"
 echo "Integration Test completed successfully."
