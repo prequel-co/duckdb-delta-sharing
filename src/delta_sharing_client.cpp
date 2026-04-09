@@ -349,6 +349,18 @@ DeltaSharingClient::TableMetadataResponse DeltaSharingClient::QueryTableMetadata
         auto options = format_obj.value("options", json::object());
         result.metadata.format.options = JsonValue::FromInternal(&options);
 
+        if (metadata_obj.contains("accessModes")) {
+            bool has_url = false;
+            for (auto &mode : metadata_obj.at("accessModes")) {
+                std::string m = mode.get<std::string>();
+                result.metadata.access_modes.push_back(m);
+                if (m == "url") has_url = true;
+            }
+            if (!has_url) {
+                throw HTTPException("Table " + share_name + "." + schema_name + "." + table_name + " does not support URL-based access mode.");
+            }
+        }
+
     } catch (const std::exception &e) {
         throw SerializationException("QueryTableMetadata error: Failed to parse response. " + std::string(e.what()));
     }
@@ -452,6 +464,19 @@ DeltaSharingClient::QueryTableResult DeltaSharingClient::QueryTable(
                     auto opts = format_obj.at("options");
                     result.metadata.format.options = JsonValue::FromInternal(&opts);
                 }
+
+                if (metadata_obj->contains("accessModes")) {
+                    bool has_url = false;
+                    for (auto &mode : metadata_obj->at("accessModes")) {
+                        std::string m = mode.get<std::string>();
+                        result.metadata.access_modes.push_back(m);
+                        if (m == "url") has_url = true;
+                    }
+                    if (!has_url) {
+                        throw HTTPException("Table " + share_name + "." + schema_name + "." + table_name + " does not support URL-based access mode.");
+                    }
+                }
+
                 found_metadata = true;
             }
         }
@@ -548,6 +573,34 @@ DeltaSharingClient::QueryTableResult DeltaSharingClient::QueryTable(
     }
 
     return result;
+}
+
+std::unordered_map<std::string, std::string> DeltaSharingClient::ParseColumnMapping(const std::string &schema_string) {
+    std::unordered_map<std::string, std::string> mapping;
+    try {
+        if (schema_string.empty()) return mapping;
+
+        json schema_json = json::parse(schema_string);
+        if (!schema_json.contains("fields") || !schema_json.at("fields").is_array()) {
+            return mapping;
+        }
+
+        auto &fields = schema_json.at("fields");
+        for (auto &field : fields) {
+            if (!field.contains("name") || !field.contains("metadata")) continue;
+
+            std::string logical_name = field.at("name").get<std::string>();
+            auto &metadata = field.at("metadata");
+
+            if (metadata.contains("delta.columnMapping.physicalName")) {
+                std::string physical_name = metadata.at("delta.columnMapping.physicalName").get<std::string>();
+                mapping[logical_name] = physical_name;
+            }
+        }
+    } catch (...) {
+        // Fallback: mapping will be empty, which is fine (means no column mapping or invalid schema string)
+    }
+    return mapping;
 }
 
 } // namespace duckdb

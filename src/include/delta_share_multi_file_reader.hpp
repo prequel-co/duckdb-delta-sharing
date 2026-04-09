@@ -23,6 +23,9 @@ public:
 
     // Cache the parsed partition column names
     std::unordered_set<std::string> partition_columns;
+    
+    // logical_name -> physical_name (for Column Mapping)
+    std::unordered_map<std::string, std::string> column_mapping;
 
 protected:
 

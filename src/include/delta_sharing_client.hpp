@@ -63,6 +63,7 @@ struct TableMetadata {
     std::string schema_string;
     JsonValue partition_columns;
     JsonValue configuration;
+    std::vector<std::string> access_modes;
     int version;
 };
 
@@ -98,6 +99,9 @@ public:
 
     // Get a specific share
     Share GetShare(const std::string &share_name);
+
+    // Parse Spark SQL JSON schema and extract logical -> physical column mapping
+    static std::unordered_map<std::string, std::string> ParseColumnMapping(const std::string &schema_string);
 
     // List schemas in a share - returns JSON array of items
     JsonValue ListSchemas(const std::string &share_name, int max_results = -1, const std::string &page_token = "");
