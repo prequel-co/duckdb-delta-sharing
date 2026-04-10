@@ -37,10 +37,6 @@ jobs:
             arch: windows_amd64
             target: release
             skip_pr: true
-          - os: ubuntu-latest
-            arch: wasm_eh
-            target: wasm_eh
-            skip_pr: true
 
     steps:
       - name: Skip if PR and not targeted arch
@@ -88,6 +84,7 @@ jobs:
             -DBUILD_EXTENSIONS="httpfs;parquet;json;icu;duck_delta_share" \
             -DEXTENSION_STATIC_BUILD=1 \
             -DVCPKG_BUILD=1 \
+            -DVCPKG_MANIFEST_DIR="$(pwd)" \
             -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" \
             -DDUCKDB_EXTENSION_CONFIGS="$(pwd)/extension_config.cmake" \
             -S duckdb -B build/release
