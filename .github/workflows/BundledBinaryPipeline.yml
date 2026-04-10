@@ -95,7 +95,7 @@ jobs:
 
       - name: Setup Emscripten
         if: matrix.arch == 'wasm_eh'
-        uses: mymindstorm/setup-emsdk@v13
+        uses: emscripten-core/setup-emsdk@v14
         with:
           version: 3.1.71
 
