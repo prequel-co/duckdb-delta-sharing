@@ -8,7 +8,16 @@ set(TARGET_NAME duck_delta_share)
 # Note that it should also be removed from vcpkg.json to prevent needlessly installing it..
 find_package(OpenSSL REQUIRED)
 find_package(CURL REQUIRED)
-find_package(nlohmann_json REQUIRED)
+find_package(nlohmann_json QUIET)
+if(NOT nlohmann_json_FOUND)
+    include(FetchContent)
+    FetchContent_Declare(
+        nlohmann_json
+        URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz
+    )
+    FetchContent_MakeAvailable(nlohmann_json)
+endif()
+
 find_path(CROARING_INCLUDE_DIR roaring/roaring.h HINTS /opt/homebrew/include)
 find_library(CROARING_LIBRARY NAMES roaring HINTS /opt/homebrew/lib)
 if(CROARING_INCLUDE_DIR AND CROARING_LIBRARY)
@@ -17,8 +26,16 @@ if(CROARING_INCLUDE_DIR AND CROARING_LIBRARY)
         IMPORTED_LOCATION "${CROARING_LIBRARY}"
         INTERFACE_INCLUDE_DIRECTORIES "${CROARING_INCLUDE_DIR}"
     )
+elseif(TARGET roaring::roaring)
+    # Target already provided via VCPKG or config
 else()
-    message(FATAL_ERROR "roaring not found")
+    include(FetchContent)
+    FetchContent_Declare(
+        roaring
+        GIT_REPOSITORY https://github.com/RoaringBitmap/CRoaring.git
+        GIT_TAG v4.6.1
+    )
+    FetchContent_MakeAvailable(roaring)
 endif()
 
 set(EXTENSION_NAME ${TARGET_NAME}_extension)
