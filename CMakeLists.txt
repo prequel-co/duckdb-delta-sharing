@@ -56,8 +56,8 @@ build_static_extension(${TARGET_NAME} ${EXTENSION_SOURCES})
 build_loadable_extension(${TARGET_NAME} " " ${EXTENSION_SOURCES})
 
 # Link dependencies in both the static library as the loadable extension
-target_link_libraries(${EXTENSION_NAME} PRIVATE OpenSSL::SSL OpenSSL::Crypto CURL::libcurl nlohmann_json::nlohmann_json roaring)
-target_link_libraries(${LOADABLE_EXTENSION_NAME} PRIVATE OpenSSL::SSL OpenSSL::Crypto CURL::libcurl nlohmann_json::nlohmann_json roaring)
+target_link_libraries(${EXTENSION_NAME} OpenSSL::SSL OpenSSL::Crypto CURL::libcurl nlohmann_json::nlohmann_json roaring)
+target_link_libraries(${LOADABLE_EXTENSION_NAME} OpenSSL::SSL OpenSSL::Crypto CURL::libcurl nlohmann_json::nlohmann_json roaring)
 
 target_include_directories(${EXTENSION_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/duckdb/extension/parquet/include")
 target_include_directories(${LOADABLE_EXTENSION_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/duckdb/extension/parquet/include")
@@ -67,3 +67,14 @@ install(
   EXPORT "${DUCKDB_EXPORT_SET}"
   LIBRARY DESTINATION "${INSTALL_LIB_DIR}"
   ARCHIVE DESTINATION "${INSTALL_LIB_DIR}")
+
+if(NOT nlohmann_json_FOUND)
+    install(TARGETS nlohmann_json EXPORT "${DUCKDB_EXPORT_SET}")
+endif()
+
+if(NOT CROARING_INCLUDE_DIR)
+    install(TARGETS roaring 
+        EXPORT "${DUCKDB_EXPORT_SET}"
+        LIBRARY DESTINATION "${INSTALL_LIB_DIR}"
+        ARCHIVE DESTINATION "${INSTALL_LIB_DIR}")
+endif()
