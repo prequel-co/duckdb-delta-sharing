@@ -94,6 +94,15 @@ DeltaSharingProfile DeltaSharingProfile::FromConfig(ClientContext &context) {
         profile.expiration_time = expiration_value.ToString();
     }
 
+    profile.query_telemetry_disabled = false;
+    Value telemetry_disabled_value;
+    if (context.TryGetCurrentSetting("delta_sharing_query_telemetry_disabled", telemetry_disabled_value) &&
+        !telemetry_disabled_value.IsNull()) {
+        profile.query_telemetry_disabled = telemetry_disabled_value.GetValue<bool>();
+    }
+
+    profile.current_query = context.GetCurrentQuery();
+
     // Remove trailing slash from endpoint if present
     if (!profile.endpoint.empty() && profile.endpoint.back() == '/') {
         profile.endpoint.pop_back();
@@ -166,6 +175,32 @@ HttpResponse DeltaSharingClient::PerformRequest(
     headers = curl_slist_append(headers, "User-Agent: delta-sharing-spark/3.1.0");
     headers = curl_slist_append(headers, "Accept: application/x-ndjson,application/json");
     headers = curl_slist_append(headers, "delta-sharing-capabilities: responseformat=delta;readerfeatures=deletionvectors,columnmapping");
+
+    if (!profile_.query_telemetry_disabled && !profile_.current_query.empty()) {
+        std::string query = profile_.current_query;
+        if (query.length() > 2048) {
+            query = query.substr(0, 2048);
+        }
+
+        // Simple Base64 Encode
+        static const char* lookup = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        std::string encoded;
+        int val = 0, valb = -6;
+        for (unsigned char c : query) {
+            val = (val << 8) + c;
+            valb += 8;
+            while (valb >= 0) {
+                encoded.push_back(lookup[(val >> valb) & 0x3F]);
+                valb -= 6;
+            }
+        }
+        if (valb > -6) encoded.push_back(lookup[((val << 8) >> (valb + 8)) & 0x3F]);
+        while (encoded.size() % 4) encoded.push_back('=');
+
+        std::string telemetry_header = "delta-sharing-query-sql: " + encoded;
+        headers = curl_slist_append(headers, telemetry_header.c_str());
+    }
+
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
 
     // Set write callback

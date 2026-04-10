@@ -532,6 +532,9 @@ static void LoadInternal(ExtensionLoader &loader) {
     config.AddExtensionOption("delta_sharing_bearer_token", "JWT Bearer token issued from server", 
         LogicalType::VARCHAR, 
         env_token? std::string(env_token) : "");
+    config.AddExtensionOption("delta_sharing_query_telemetry_disabled", "Disable sending full SQL query to server for telemetry", 
+        LogicalType::BOOLEAN, 
+        Value::BOOLEAN(false));
 
     // Delta Sharing Functions
     TableFunction list("delta_share_list", {}, ListFunction, ListBind);
