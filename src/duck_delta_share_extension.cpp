@@ -523,6 +523,12 @@ static void LoadInternal(ExtensionLoader &loader) {
 		con.Query("LOAD httpfs");
 	}
 
+	auto result_parquet = con.Query("LOAD parquet");
+	if (result_parquet->HasError()) {
+		con.Query("INSTALL parquet");
+		con.Query("LOAD parquet");
+	}
+
     // Delta Sharing config
     const char* env_ep = std::getenv("DELTA_SHARING_ENDPOINT");
     const char* env_token = std::getenv("DELTA_SHARING_BEARER_TOKEN");
