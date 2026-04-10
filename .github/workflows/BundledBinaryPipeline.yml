@@ -88,9 +88,16 @@ jobs:
             -DBUILD_EXTENSIONS="httpfs;parquet;json;icu;duck_delta_share" \
             -DEXTENSION_STATIC_BUILD=1 \
             -DVCPKG_BUILD=1 \
+            -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" \
             -DDUCKDB_EXTENSION_CONFIGS="$(pwd)/extension_config.cmake" \
             -S duckdb -B build/release
           cmake --build build/release --target duckdb
+
+      - name: Setup Emscripten
+        if: matrix.arch == 'wasm_eh'
+        uses: mymindstorm/setup-emsdk@v13
+        with:
+          version: 3.1.71
 
       - name: Build Bundled Binary (WASM)
         if: matrix.arch == 'wasm_eh'
