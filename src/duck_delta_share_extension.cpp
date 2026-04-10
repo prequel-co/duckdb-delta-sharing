@@ -547,8 +547,8 @@ static void LoadInternal(ExtensionLoader &loader) {
     list.varargs = LogicalType::VARCHAR;
     loader.RegisterFunction(list);
 
-    // Register our parquet_scan overlay!
-    auto &parquet_scan_entry = loader.GetTableFunction("parquet_scan");
+    // Register our read_parquet overlay!
+    auto &parquet_scan_entry = loader.GetTableFunction("read_parquet");
     TableFunction base_read = parquet_scan_entry.functions.functions[0];
     base_parquet_scan_function = base_read.function;
 
