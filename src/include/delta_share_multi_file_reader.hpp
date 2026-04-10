@@ -57,7 +57,7 @@ public:
                                           ClientContext &context, MultiFileGlobalState &gstate) override;
 };
 
-// Filter to apply croaring deletion vectors inside the DuckDB scanner!
+// Filter to apply roaring deletion vectors inside the DuckDB scanner!
 class DeltaShareDeleteFilter : public DeleteFilter {
 public:
     DeltaShareDeleteFilter(roaring::api::roaring_bitmap_t *dv) : dv(dv) {}
