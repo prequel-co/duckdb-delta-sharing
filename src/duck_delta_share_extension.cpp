@@ -541,7 +541,7 @@ static void LoadInternal(DUCK_DELTA_SHARE_EXTENSION_LOAD_PARAM) {
     auto &config = DBConfig::GetConfig(instance);
 
 	// Delta Sharing required extensions
-    Connection con(db);
+    Connection con(instance);
 	auto result = con.Query("LOAD httpfs");
 	if (result->HasError()) {
 		con.Query("INSTALL httpfs");
