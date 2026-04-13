@@ -11,7 +11,9 @@
 #include "duckdb/main/connection.hpp"
 #include "duckdb/main/query_result.hpp"
 #include "duckdb/main/materialized_query_result.hpp"
+#ifndef DUCKDB_CPP_EXTENSION_ENTRY
 #include "duckdb/main/extension_util.hpp"
+#endif
 #include "duckdb/planner/expression/bound_function_expression.hpp"
 #include <nlohmann/json.hpp>
 #include <unordered_set>
