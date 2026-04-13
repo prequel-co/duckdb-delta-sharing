@@ -70,6 +70,7 @@ jobs:
           VCPKG_MANIFEST_DIR="$(pwd)" \
           EXTENSION_STATIC_BUILD=1 \
           OSX_BUILD_ARCH=${{ (matrix.arch == 'osx_amd64' && 'x86_64') || (matrix.arch == 'osx_arm64' && 'arm64') || '' }} \
+          VCPKG_TARGET_TRIPLET=${{ (matrix.arch == 'osx_amd64' && 'x64-osx') || (matrix.arch == 'osx_arm64' && 'arm64-osx') || (matrix.arch == 'linux_amd64' && 'x64-linux') || (matrix.arch == 'linux_arm64' && 'arm64-linux') || '' }} \
           make ${{ matrix.target }}
         env:
           GEN: ninja
