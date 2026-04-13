@@ -61,7 +61,7 @@ jobs:
           git -C ./extension-ci-tools pull origin main
 
       - name: Build Bundled Binary (Unix)
-        if: matrix.os != 'windows-latest' && matrix.arch != 'wasm_eh'
+        if: matrix.os != 'windows-latest'
         run: |
           CORE_EXTENSIONS="httpfs;parquet;json;icu" \
           BUILD_EXTENSIONS="httpfs;parquet;json;icu;duck_delta_share" \
@@ -93,22 +93,32 @@ jobs:
             -S duckdb -B build/release
           cmake --build build/release --target duckdb
 
-      - name: Setup Emscripten
-        if: matrix.arch == 'wasm_eh'
-        uses: emscripten-core/setup-emsdk@v14
-        with:
-          version: 3.1.71
-
-      - name: Build Bundled Binary (WASM)
-        if: matrix.arch == 'wasm_eh'
+      - name: Build ODBC Driver (OSX)
+        if: startsWith(matrix.os, 'macos')
         run: |
-          # WASM build requires emscripten
-          # This assumes emscripten is available or will be installed
-          # Reusing extension-ci-tools wasm target but ensuring shell build
-          echo "Building WASM Shell with Extensions..."
-          CORE_EXTENSIONS="httpfs;parquet;json;icu" \
-          BUILD_EXTENSIONS="httpfs;parquet;json;icu;duck_delta_share" \
-          make wasm_eh
+          brew install unixodbc || true
+          git clone https://github.com/duckdb/duckdb-odbc.git build/duckdb-odbc
+          cd build/duckdb-odbc
+          python3 vendor.py --duckdb ../../duckdb
+          mkdir -p build/release
+          cd build/release
+          cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=${{ (matrix.arch == 'osx_amd64' && 'x86_64') || (matrix.arch == 'osx_arm64' && 'arm64') || '' }} ../..
+          cmake --build . --config Release
+
+      - name: Build ODBC Driver (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: |
+          git clone https://github.com/duckdb/duckdb-odbc.git build/duckdb-odbc
+          cd build/duckdb-odbc
+          python vendor.py --duckdb ../../duckdb
+          mkdir -p build/release
+          cd build/release
+          cmake -G "Ninja" -DCMAKE_BUILD_TYPE=Release ../..
+          cmake --build . --config Release
+
+
+
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
@@ -117,8 +127,9 @@ jobs:
           path: |
             build/release/duckdb
             build/release/duckdb.exe
-            build/wasm_eh/duckdb.js
-            build/wasm_eh/duckdb.wasm
+            build/duckdb-odbc/build/release/libduckdb_odbc.dylib
+            build/duckdb-odbc/build/release/duckdb_odbc.dll
+            build/duckdb-odbc/build/release/duckdb_odbc.lib
 
   bundle-macos-universal:
     name: Create MacOS Universal Binary
