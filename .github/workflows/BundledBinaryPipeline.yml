@@ -85,7 +85,7 @@ jobs:
           cmake -G "Ninja" \
             -DCMAKE_BUILD_TYPE=Release \
             -DCORE_EXTENSIONS="httpfs;parquet;json;icu" \
-            -DBUILD_EXTENSIONS="httpfs;parquet;json;icu;duck_delta_share" \
+            -DBUILD_EXTENSIONS="httpfs;parquet;json;icu" \
             -DEXTENSION_STATIC_BUILD=1 \
             -DVCPKG_BUILD=1 \
             -DVCPKG_MANIFEST_DIR="${WORKSPACE_PATH}" \
@@ -97,7 +97,13 @@ jobs:
       - name: Build ODBC Driver (OSX)
         if: startsWith(matrix.os, 'macos')
         run: |
-          brew install unixodbc || true
+          if [[ "${{ matrix.arch }}" == "osx_amd64" ]]; then
+            /usr/local/bin/brew install unixodbc || true
+            export CMAKE_PREFIX_PATH="/usr/local/opt/unixodbc"
+          else
+            brew install unixodbc || true
+            export CMAKE_PREFIX_PATH="$(brew --prefix unixodbc)"
+          fi
           git clone https://github.com/duckdb/duckdb-odbc.git build/duckdb-odbc
           cd build/duckdb-odbc
           python3 vendor.py --duckdb ../../duckdb
