@@ -98,8 +98,13 @@ jobs:
         if: startsWith(matrix.os, 'macos')
         run: |
           if [[ "${{ matrix.arch }}" == "osx_amd64" ]]; then
-            /usr/local/bin/brew install unixodbc || true
-            export CMAKE_PREFIX_PATH="/usr/local/opt/unixodbc"
+            curl -sL http://www.unixodbc.org/unixODBC-2.3.12.tar.gz | tar xz
+            cd unixODBC-2.3.12
+            CFLAGS="-arch x86_64 -arch arm64" LDFLAGS="-arch x86_64 -arch arm64" ./configure --prefix=/tmp/unixodbc --disable-gui --disable-drivers
+            make -j4
+            make install
+            cd ..
+            export CMAKE_PREFIX_PATH="/tmp/unixodbc"
           else
             brew install unixodbc || true
             export CMAKE_PREFIX_PATH="$(brew --prefix unixodbc)"
