@@ -20,7 +20,11 @@
 #include "duckdb/common/types/vector.hpp"
 #include "delta_share_multi_file_reader.hpp"
 #include "duckdb/catalog/catalog_entry/table_function_catalog_entry.hpp"
+#if defined(__has_include)
+#if __has_include("duckdb/common/multi_file/multi_file_function.hpp")
 #include "duckdb/common/multi_file/multi_file_function.hpp"
+#endif
+#endif
 
 #if defined(__has_include)
 #if __has_include("duckdb/common/vector/list_vector.hpp")
