@@ -21,7 +21,7 @@ jobs:
             arch: linux_amd64
             target: release
             skip_pr: true
-          - os: ubuntu-latest
+          - os: ubuntu-24.04-arm
             arch: linux_arm64
             target: release
             skip_pr: true
