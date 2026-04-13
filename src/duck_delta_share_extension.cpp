@@ -11,6 +11,7 @@
 #include "duckdb/main/connection.hpp"
 #include "duckdb/main/query_result.hpp"
 #include "duckdb/main/materialized_query_result.hpp"
+#include "duckdb/main/extension_util.hpp"
 #include "duckdb/planner/expression/bound_function_expression.hpp"
 #include <nlohmann/json.hpp>
 #include <unordered_set>
@@ -525,12 +526,12 @@ static void DeltaShareListFilesFunction(
     ListVector::SetListSize(result, total_size);
 }
 
-static void LoadInternal(ExtensionLoader &loader) {
-    auto &instance = loader.GetDatabaseInstance();
+static void LoadInternal(DuckDB &db) {
+    auto &instance = *db.instance;
     auto &config = DBConfig::GetConfig(instance);
 
 	// Delta Sharing required extensions
-    Connection con(loader.GetDatabaseInstance());
+    Connection con(db);
 	auto result = con.Query("LOAD httpfs");
 	if (result->HasError()) {
 		con.Query("INSTALL httpfs");
@@ -559,10 +560,11 @@ static void LoadInternal(ExtensionLoader &loader) {
     // Delta Sharing Functions
     TableFunction list("delta_share_list", {}, ListFunction, ListBind);
     list.varargs = LogicalType::VARCHAR;
-    loader.RegisterFunction(list);
+    ExtensionUtil::RegisterFunction(instance, list);
 
     // Register our read_parquet overlay!
-    auto &parquet_scan_entry = loader.GetTableFunction("read_parquet");
+    auto &catalog = Catalog::GetSystemCatalog(instance);
+    auto &parquet_scan_entry = catalog.GetEntry<TableFunctionCatalogEntry>(*con.context, DEFAULT_SCHEMA, "read_parquet");
     TableFunction base_read = parquet_scan_entry.functions.functions[0];
     base_parquet_scan_function = base_read.function;
 
@@ -591,7 +593,7 @@ static void LoadInternal(ExtensionLoader &loader) {
     read_4arg_tstz.arguments = {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::TIMESTAMP_TZ};
     delta_share_read.AddFunction(read_4arg_tstz);
 
-    loader.RegisterFunction(delta_share_read);
+    ExtensionUtil::RegisterFunction(instance, delta_share_read);
 
     // CDF Function
     TableFunctionSet delta_share_cdf("delta_share_change_data_feed");
@@ -613,7 +615,7 @@ static void LoadInternal(ExtensionLoader &loader) {
     cdf_5arg.arguments = {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::ANY, LogicalType::ANY};
     delta_share_cdf.AddFunction(cdf_5arg);
 
-    loader.RegisterFunction(delta_share_cdf);
+    ExtensionUtil::RegisterFunction(instance, delta_share_cdf);
     ScalarFunctionSet list_files_set("delta_share_list_files");
 
     // 3-argument version (no predicate hints)
@@ -632,12 +634,12 @@ static void LoadInternal(ExtensionLoader &loader) {
 
     list_files_set.AddFunction(list_files_3arg);
     list_files_set.AddFunction(list_files_4arg);
-    loader.RegisterFunction(list_files_set);
+    ExtensionUtil::RegisterFunction(instance, list_files_set);
 
 }
 
-void DuckDeltaShareExtension::Load(ExtensionLoader &loader) {
-    LoadInternal(loader);
+void DuckDeltaShareExtension::Load(DuckDB &db) {
+    LoadInternal(db);
 }
 
 std::string DuckDeltaShareExtension::Name() {
