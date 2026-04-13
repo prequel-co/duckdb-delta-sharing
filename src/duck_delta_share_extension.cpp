@@ -15,10 +15,23 @@
 #include <nlohmann/json.hpp>
 #include <unordered_set>
 #include "duckdb/common/types/vector.hpp"
-#include "duckdb/common/vector/list_vector.hpp"
 #include "delta_share_multi_file_reader.hpp"
 #include "duckdb/catalog/catalog_entry/table_function_catalog_entry.hpp"
 #include "duckdb/common/multi_file/multi_file_function.hpp"
+
+#if defined(__has_include)
+#if __has_include("duckdb/common/vector/list_vector.hpp")
+#include "duckdb/common/vector/list_vector.hpp"
+#define DUCK_DELTA_GET_DATA_MUTABLE FlatVector::GetDataMutable
+#endif
+#if __has_include("duckdb/common/vector/string_vector.hpp")
+#include "duckdb/common/vector/string_vector.hpp"
+#endif
+#endif
+
+#ifndef DUCK_DELTA_GET_DATA_MUTABLE
+#define DUCK_DELTA_GET_DATA_MUTABLE FlatVector::GetData
+#endif
 
 namespace duckdb {
 
@@ -455,7 +468,7 @@ static void DeltaShareListFilesFunction(
 
     // Setup result as LIST(VARCHAR)
     result.SetVectorType(VectorType::FLAT_VECTOR);
-    auto list_data = FlatVector::GetDataMutable<list_entry_t>(result);
+    auto list_data = DUCK_DELTA_GET_DATA_MUTABLE<list_entry_t>(result);
     auto &child_vector = ListVector::GetEntry(result);
     auto &result_validity = FlatVector::Validity(result);
 
@@ -495,7 +508,7 @@ static void DeltaShareListFilesFunction(
 
             // Reserve space in child vector
             ListVector::Reserve(result, total_size + query_result.files.size());
-            auto child_data = FlatVector::GetDataMutable<string_t>(child_vector);
+            auto child_data = DUCK_DELTA_GET_DATA_MUTABLE<string_t>(child_vector);
 
             // Add file URLs to child vector
             for (size_t i = 0; i < query_result.files.size(); i++) {
