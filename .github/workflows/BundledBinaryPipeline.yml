@@ -80,6 +80,7 @@ jobs:
         shell: bash
         run: |
           # Use cmake directly for Windows to ensure correct vcpkg integration
+          WORKSPACE_PATH="${GITHUB_WORKSPACE//\\//}"
           mkdir -p build/release
           cmake -G "Ninja" \
             -DCMAKE_BUILD_TYPE=Release \
@@ -87,9 +88,9 @@ jobs:
             -DBUILD_EXTENSIONS="httpfs;parquet;json;icu;duck_delta_share" \
             -DEXTENSION_STATIC_BUILD=1 \
             -DVCPKG_BUILD=1 \
-            -DVCPKG_MANIFEST_DIR="$(pwd)" \
+            -DVCPKG_MANIFEST_DIR="${WORKSPACE_PATH}" \
             -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" \
-            -DDUCKDB_EXTENSION_CONFIGS="$(pwd)/extension_config.cmake" \
+            -DDUCKDB_EXTENSION_CONFIGS="${WORKSPACE_PATH}/extension_config.cmake" \
             -S duckdb -B build/release
           cmake --build build/release --target duckdb
 
