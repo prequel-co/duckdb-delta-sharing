@@ -66,6 +66,8 @@ jobs:
           CORE_EXTENSIONS="httpfs;parquet;json;icu" \
           BUILD_EXTENSIONS="httpfs;parquet;json;icu;duck_delta_share" \
           VCPKG_BUILD=1 \
+          VCPKG_TOOLCHAIN_PATH="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" \
+          VCPKG_MANIFEST_DIR="$(pwd)" \
           EXTENSION_STATIC_BUILD=1 \
           OSX_BUILD_ARCH=${{ (matrix.arch == 'osx_amd64' && 'x86_64') || (matrix.arch == 'osx_arm64' && 'arm64') || '' }} \
           make ${{ matrix.target }}
