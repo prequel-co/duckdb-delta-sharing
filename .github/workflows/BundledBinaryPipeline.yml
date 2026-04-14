@@ -1,8 +1,9 @@
 name: Bundled Binary Pipeline
 on:
-  push:
-    branches: [main]
+  release:
+    types: [published]
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
   workflow_dispatch:
 
 concurrency:
@@ -12,6 +13,7 @@ concurrency:
 jobs:
   build-binaries:
     name: Build Bundled Binaries
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'build-bundled-binary')
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
