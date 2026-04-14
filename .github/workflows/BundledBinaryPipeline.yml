@@ -131,7 +131,7 @@ jobs:
           c=open(f).read()
           c=c.replace('/bigobj', '-Wa,-mbig-obj')
           c=c.replace('add_subdirectory(winsetup)', '# disabled winsetup')
-          c=c.replace('legacy_stdio_definitions', '')
+          c=c.replace('legacy_stdio_definitions', 'ws2_32> $<$<PLATFORM_ID:Windows>:rstrtmgr> $<$<PLATFORM_ID:Windows>:bcrypt> $<$<PLATFORM_ID:Windows>:crypt32')
           open(f,'w').write(c)
 
           f2='test/CMakeLists.txt'
