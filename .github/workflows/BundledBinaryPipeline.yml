@@ -125,7 +125,7 @@ jobs:
         run: |
           git clone https://github.com/duckdb/duckdb-odbc.git build/duckdb-odbc
           cd build/duckdb-odbc
-          sed -i 's|/bigobj|-Wa,-mbig-obj|g' CMakeLists.txt
+          sed -i 's|/bigobj|-Wa,-mbig-obj|g' CMakeLists.txt.in
           python vendor.py --duckdb ../../duckdb
           mkdir -p build/release
           cd build/release
