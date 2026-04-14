@@ -125,7 +125,23 @@ jobs:
         run: |
           git clone https://github.com/duckdb/duckdb-odbc.git build/duckdb-odbc
           cd build/duckdb-odbc
-          python -c "f='CMakeLists.txt.in'; c=open(f).read(); open(f,'w').write(c.replace('/bigobj', '-Wa,-mbig-obj').replace('add_subdirectory(winsetup)', '# disabled winsetup via pipeline patching'))"
+          cat << 'EOF' > patch.py
+          import os
+          f='CMakeLists.txt.in'
+          c=open(f).read()
+          c=c.replace('/bigobj', '-Wa,-mbig-obj')
+          c=c.replace('add_subdirectory(winsetup)', '# disabled winsetup')
+          c=c.replace('legacy_stdio_definitions', '')
+          open(f,'w').write(c)
+
+          f2='test/CMakeLists.txt'
+          if os.path.exists(f2):
+              c2=open(f2).read()
+              c2=c2.replace('/bigobj', '-Wa,-mbig-obj')
+              open(f2,'w').write(c2)
+          EOF
+          python patch.py
+          
           python vendor.py --duckdb ../../duckdb
           python -c "f='src/odbc_driver/common/file_io.cpp'; c=open(f).read(); open(f,'w').write(c.replace('file.open(wpath,', 'file.open(wpath.c_str(),'))"
           mkdir -p build/release
