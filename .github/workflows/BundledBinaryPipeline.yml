@@ -125,9 +125,9 @@ jobs:
         run: |
           git clone https://github.com/duckdb/duckdb-odbc.git build/duckdb-odbc
           cd build/duckdb-odbc
-          sed -i 's|/bigobj|-Wa,-mbig-obj|g' CMakeLists.txt.in
+          python -c "f='CMakeLists.txt.in'; c=open(f).read(); open(f,'w').write(c.replace('/bigobj', '-Wa,-mbig-obj'))"
           python vendor.py --duckdb ../../duckdb
-          sed -i 's|file.open(wpath,|file.open(wpath.c_str(),|g' src/odbc_driver/common/file_io.cpp
+          python -c "f='src/odbc_driver/common/file_io.cpp'; c=open(f).read(); open(f,'w').write(c.replace('file.open(wpath,', 'file.open(wpath.c_str(),'))"
           mkdir -p build/release
           cd build/release
           cmake -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" ../..
@@ -231,8 +231,8 @@ jobs:
           gcloud artifacts generic upload \
             --project="prql-dev" \
             --location="us" \
-            --repository="<YOUR_GAR_REPOSITORY_NAME>" \
-            --package="duckdb/delta_sharing" \
+            --repository="duckdb" \
+            --package="delta_sharing" \
             --version=${{ github.sha }} \
             --source=duckdb-osx_universal.tar.gz
 
@@ -242,8 +242,8 @@ jobs:
           gcloud artifacts generic upload \
             --project="prql-prod" \
             --location="us" \
-            --repository="<YOUR_GAR_REPOSITORY_NAME>" \
-            --package="duckdb/delta_sharing" \
+            --repository="duckdb" \
+            --package="delta_sharing" \
             --version=${{ github.event.release.tag_name }} \
             --source=duckdb-osx_universal.tar.gz
 
