@@ -128,7 +128,7 @@ jobs:
           python vendor.py --duckdb ../../duckdb
           mkdir -p build/release
           cd build/release
-          cmake -G "Ninja" -DCMAKE_BUILD_TYPE=Release ../..
+          cmake -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" ../..
           cmake --build . --config Release
 
 
