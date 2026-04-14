@@ -127,6 +127,7 @@ jobs:
           cd build/duckdb-odbc
           sed -i 's|/bigobj|-Wa,-mbig-obj|g' CMakeLists.txt.in
           python vendor.py --duckdb ../../duckdb
+          sed -i 's|file.open(wpath,|file.open(wpath.c_str(),|g' src/odbc_driver/common/file_io.cpp
           mkdir -p build/release
           cd build/release
           cmake -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" ../..
@@ -145,6 +146,47 @@ jobs:
             build/duckdb-odbc/build/release/libduckdb_odbc.dylib
             build/duckdb-odbc/build/release/duckdb_odbc.dll
             build/duckdb-odbc/build/release/duckdb_odbc.lib
+
+      - name: Compress Artifacts
+        shell: bash
+        run: |
+          mkdir -p gar_artifacts
+          cp build/release/duckdb gar_artifacts/ 2>/dev/null || true
+          cp build/release/duckdb.exe gar_artifacts/ 2>/dev/null || true
+          cp build/duckdb-odbc/build/release/libduckdb_odbc.dylib gar_artifacts/ 2>/dev/null || true
+          cp build/duckdb-odbc/build/release/duckdb_odbc.dll gar_artifacts/ 2>/dev/null || true
+          cp build/duckdb-odbc/build/release/duckdb_odbc.lib gar_artifacts/ 2>/dev/null || true
+          cd gar_artifacts
+          tar -czf ../duckdb-${{ matrix.arch }}.tar.gz .
+
+      - name: Authenticate GCP
+        uses: google-github-actions/auth@v3
+        with:
+          credentials_json: ${{ secrets.GCP_ARTIFACT_REGISTRY_SA_JSON }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Upload to prql-dev GAR
+        run: |
+          gcloud artifacts generic upload \
+            --project="prql-dev" \
+            --location="us" \
+            --repository="duckdb" \
+            --package="delta_sharing" \
+            --version=${{ github.sha }} \
+            --source=duckdb-${{ matrix.arch }}.tar.gz
+
+      - name: Upload to prql-prod GAR
+        if: github.event_name == 'release'
+        run: |
+          gcloud artifacts generic upload \
+            --project="prql-prod" \
+            --location="us" \
+            --repository="duckdb" \
+            --package="delta_sharing" \
+            --version=${{ github.event.release.tag_name }} \
+            --source=duckdb-${{ matrix.arch }}.tar.gz
 
   bundle-macos-universal:
     name: Create MacOS Universal Binary
@@ -171,6 +213,39 @@ jobs:
         with:
           name: duckdb-osx_universal
           path: duckdb
+
+      - name: Compress Artifacts
+        run: |
+          tar -czf duckdb-osx_universal.tar.gz duckdb
+
+      - name: Authenticate GCP
+        uses: google-github-actions/auth@v3
+        with:
+          credentials_json: ${{ secrets.GCP_ARTIFACT_REGISTRY_SA_JSON }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Upload to prql-dev GAR
+        run: |
+          gcloud artifacts generic upload \
+            --project="prql-dev" \
+            --location="us" \
+            --repository="<YOUR_GAR_REPOSITORY_NAME>" \
+            --package="duckdb/delta_sharing" \
+            --version=${{ github.sha }} \
+            --source=duckdb-osx_universal.tar.gz
+
+      - name: Upload to prql-prod GAR
+        if: github.event_name == 'release'
+        run: |
+          gcloud artifacts generic upload \
+            --project="prql-prod" \
+            --location="us" \
+            --repository="<YOUR_GAR_REPOSITORY_NAME>" \
+            --package="duckdb/delta_sharing" \
+            --version=${{ github.event.release.tag_name }} \
+            --source=duckdb-osx_universal.tar.gz
 
   e2e-test-bundled:
     name: E2E Test (Bundled)
