@@ -3,7 +3,7 @@
                 "openssl",
                 "curl",
                 "nlohmann-json",
-                "croaring"
+                "roaring"
         ],
         "vcpkg-configuration": {
                 "overlay-ports": [

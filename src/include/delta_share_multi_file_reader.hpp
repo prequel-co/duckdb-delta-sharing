@@ -1,7 +1,23 @@
 #pragma once
 
+#if defined(__has_include)
+#if __has_include("duckdb/common/multi_file/multi_file_reader.hpp")
 #include "duckdb/common/multi_file/multi_file_reader.hpp"
+#elif __has_include("duckdb/common/multi_file_reader.hpp")
+#include "duckdb/common/multi_file_reader.hpp"
+#else
+#error "Could not find multi_file_reader.hpp"
+#endif
+#endif
+#if defined(__has_include)
+#if __has_include("duckdb/common/multi_file/multi_file_list.hpp")
 #include "duckdb/common/multi_file/multi_file_list.hpp"
+#elif __has_include("duckdb/common/multi_file_list.hpp")
+#include "duckdb/common/multi_file_list.hpp"
+#else
+#error "Could not find multi_file_list.hpp"
+#endif
+#endif
 #include "delta_sharing_client.hpp"
 #include "roaring/roaring.hh"
 #include <mutex>
@@ -57,7 +73,7 @@ public:
                                           ClientContext &context, MultiFileGlobalState &gstate) override;
 };
 
-// Filter to apply croaring deletion vectors inside the DuckDB scanner!
+// Filter to apply roaring deletion vectors inside the DuckDB scanner!
 class DeltaShareDeleteFilter : public DeleteFilter {
 public:
     DeltaShareDeleteFilter(roaring::api::roaring_bitmap_t *dv) : dv(dv) {}

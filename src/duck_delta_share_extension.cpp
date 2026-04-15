@@ -11,13 +11,44 @@
 #include "duckdb/main/connection.hpp"
 #include "duckdb/main/query_result.hpp"
 #include "duckdb/main/materialized_query_result.hpp"
+#ifndef DUCKDB_CPP_EXTENSION_ENTRY
+#include "duckdb/main/extension_util.hpp"
+#endif
 #include "duckdb/planner/expression/bound_function_expression.hpp"
 #include <nlohmann/json.hpp>
 #include <unordered_set>
 #include "duckdb/common/types/vector.hpp"
 #include "delta_share_multi_file_reader.hpp"
 #include "duckdb/catalog/catalog_entry/table_function_catalog_entry.hpp"
+#if defined(__has_include)
+#if __has_include("duckdb/common/multi_file/multi_file_function.hpp")
 #include "duckdb/common/multi_file/multi_file_function.hpp"
+#endif
+#endif
+
+#if defined(__has_include)
+#if __has_include("duckdb/common/vector/list_vector.hpp")
+#include "duckdb/common/vector/list_vector.hpp"
+#define DUCK_DELTA_GET_DATA_MUTABLE FlatVector::GetDataMutable
+#endif
+#if __has_include("duckdb/common/vector/string_vector.hpp")
+#include "duckdb/common/vector/string_vector.hpp"
+#endif
+#endif
+
+#ifndef DUCK_DELTA_GET_DATA_MUTABLE
+#define DUCK_DELTA_GET_DATA_MUTABLE FlatVector::GetData
+#endif
+
+#ifdef DUCKDB_CPP_EXTENSION_ENTRY
+#define DUCKDB_REGISTER_FUNCTION(loader, func) loader.RegisterFunction(func)
+#define DUCKDB_GET_DATABASE_INSTANCE(loader) loader.GetDatabaseInstance()
+#define DUCKDB_GET_TABLE_FUNCTION(loader, con, name) loader.GetTableFunction(name)
+#else
+#define DUCKDB_REGISTER_FUNCTION(loader, func) ExtensionUtil::RegisterFunction(*loader.instance, func)
+#define DUCKDB_GET_DATABASE_INSTANCE(loader) *loader.instance
+#define DUCKDB_GET_TABLE_FUNCTION(loader, con, name) Catalog::GetSystemCatalog(*loader.instance).GetEntry<TableFunctionCatalogEntry>(*con.context, DEFAULT_SCHEMA, name)
+#endif
 
 namespace duckdb {
 
@@ -454,7 +485,7 @@ static void DeltaShareListFilesFunction(
 
     // Setup result as LIST(VARCHAR)
     result.SetVectorType(VectorType::FLAT_VECTOR);
-    auto list_data = FlatVector::GetData<list_entry_t>(result);
+    auto list_data = DUCK_DELTA_GET_DATA_MUTABLE<list_entry_t>(result);
     auto &child_vector = ListVector::GetEntry(result);
     auto &result_validity = FlatVector::Validity(result);
 
@@ -494,7 +525,7 @@ static void DeltaShareListFilesFunction(
 
             // Reserve space in child vector
             ListVector::Reserve(result, total_size + query_result.files.size());
-            auto child_data = FlatVector::GetData<string_t>(child_vector);
+            auto child_data = DUCK_DELTA_GET_DATA_MUTABLE<string_t>(child_vector);
 
             // Add file URLs to child vector
             for (size_t i = 0; i < query_result.files.size(); i++) {
@@ -511,16 +542,22 @@ static void DeltaShareListFilesFunction(
     ListVector::SetListSize(result, total_size);
 }
 
-static void LoadInternal(ExtensionLoader &loader) {
-    auto &instance = loader.GetDatabaseInstance();
+static void LoadInternal(DUCK_DELTA_SHARE_EXTENSION_LOAD_PARAM) {
+    auto &instance = DUCKDB_GET_DATABASE_INSTANCE(db);
     auto &config = DBConfig::GetConfig(instance);
 
 	// Delta Sharing required extensions
-    Connection con(loader.GetDatabaseInstance());
+    Connection con(instance);
 	auto result = con.Query("LOAD httpfs");
 	if (result->HasError()) {
 		con.Query("INSTALL httpfs");
 		con.Query("LOAD httpfs");
+	}
+
+	auto result_parquet = con.Query("LOAD parquet");
+	if (result_parquet->HasError()) {
+		con.Query("INSTALL parquet");
+		con.Query("LOAD parquet");
 	}
 
     // Delta Sharing config
@@ -532,14 +569,17 @@ static void LoadInternal(ExtensionLoader &loader) {
     config.AddExtensionOption("delta_sharing_bearer_token", "JWT Bearer token issued from server", 
         LogicalType::VARCHAR, 
         env_token? std::string(env_token) : "");
+    config.AddExtensionOption("delta_sharing_query_telemetry_disabled", "Disable sending full SQL query to server for telemetry", 
+        LogicalType::BOOLEAN, 
+        Value::BOOLEAN(false));
 
     // Delta Sharing Functions
     TableFunction list("delta_share_list", {}, ListFunction, ListBind);
     list.varargs = LogicalType::VARCHAR;
-    loader.RegisterFunction(list);
+    DUCKDB_REGISTER_FUNCTION(db, list);
 
-    // Register our parquet_scan overlay!
-    auto &parquet_scan_entry = loader.GetTableFunction("parquet_scan");
+    // Register our read_parquet overlay!
+    auto &parquet_scan_entry = DUCKDB_GET_TABLE_FUNCTION(db, con, "read_parquet");
     TableFunction base_read = parquet_scan_entry.functions.functions[0];
     base_parquet_scan_function = base_read.function;
 
@@ -568,7 +608,7 @@ static void LoadInternal(ExtensionLoader &loader) {
     read_4arg_tstz.arguments = {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::TIMESTAMP_TZ};
     delta_share_read.AddFunction(read_4arg_tstz);
 
-    loader.RegisterFunction(delta_share_read);
+    DUCKDB_REGISTER_FUNCTION(db, delta_share_read);
 
     // CDF Function
     TableFunctionSet delta_share_cdf("delta_share_change_data_feed");
@@ -590,7 +630,7 @@ static void LoadInternal(ExtensionLoader &loader) {
     cdf_5arg.arguments = {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::ANY, LogicalType::ANY};
     delta_share_cdf.AddFunction(cdf_5arg);
 
-    loader.RegisterFunction(delta_share_cdf);
+    DUCKDB_REGISTER_FUNCTION(db, delta_share_cdf);
     ScalarFunctionSet list_files_set("delta_share_list_files");
 
     // 3-argument version (no predicate hints)
@@ -609,12 +649,12 @@ static void LoadInternal(ExtensionLoader &loader) {
 
     list_files_set.AddFunction(list_files_3arg);
     list_files_set.AddFunction(list_files_4arg);
-    loader.RegisterFunction(list_files_set);
+    DUCKDB_REGISTER_FUNCTION(db, list_files_set);
 
 }
 
-void DuckDeltaShareExtension::Load(ExtensionLoader &loader) {
-    LoadInternal(loader);
+void DuckDeltaShareExtension::Load(DUCK_DELTA_SHARE_EXTENSION_LOAD_PARAM) {
+    LoadInternal(db);
 }
 
 std::string DuckDeltaShareExtension::Name() {

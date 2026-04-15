@@ -14,6 +14,8 @@ struct DeltaSharingProfile {
     std::string endpoint;
     std::string bearer_token;
     std::string expiration_time; // Optional, ISO 8601 format
+    bool query_telemetry_disabled;
+    std::string current_query;
 
     static DeltaSharingProfile FromConfig(ClientContext &context);
 };

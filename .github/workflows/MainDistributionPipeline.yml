@@ -3,8 +3,10 @@
 #
 name: Main Extension Distribution Pipeline
 on:
-  push:
+  release:
+    types: [published]
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
   workflow_dispatch:
 
 concurrency:
@@ -14,12 +16,13 @@ concurrency:
 jobs:
   duckdb-stable-build:
     name: Build extension binaries
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'build-extensions')
     uses: duckdb/extension-ci-tools/.github/workflows/_extension_distribution.yml@v1.5.1
     with:
       duckdb_version: v1.5.1
       ci_tools_version: v1.5.1
       extension_name: duck_delta_share
-      exclude_archs: ${{ github.event_name == 'pull_request' && 'linux_amd64;linux_arm64;linux_amd64_musl;linux_arm64_musl;osx_amd64;windows_amd64;windows_arm64;windows_amd64_mingw;wasm_mvp;wasm_eh;wasm_threads' || '' }}
+      exclude_archs: "wasm_mvp;wasm_eh;wasm_threads;${{ github.event_name == 'pull_request' && 'linux_amd64;linux_arm64;linux_amd64_musl;linux_arm64_musl;osx_amd64;windows_amd64;windows_arm64;windows_amd64_mingw' || '' }}"
 
   # code-quality-check: 
   #   name: Code Quality Check
@@ -29,3 +32,52 @@ jobs:
   #     ci_tools_version: v1.4.3
   #     extension_name: duck_delta_share
   #     format_checks: 'format;tidy'
+
+  upload-to-gar:
+    name: Upload Extensions to Google Artifact Registry
+    needs: duckdb-stable-build
+    runs-on: ubuntu-latest
+    if: success()
+    env:
+      GAR_LOCATION: "us"
+      GAR_REPOSITORY: duckdb
+      GAR_PACKAGE: delta_sharing
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Tar Artifacts
+        run: |
+          cd artifacts
+          tar -czf ../duck_delta_share_extensions.tar.gz .
+      
+      - name: Authenticate GCP
+        uses: google-github-actions/auth@v3
+        with:
+          credentials_json: ${{ secrets.GCP_ARTIFACT_REGISTRY_SA_JSON }}
+
+      - name: 'Set up Cloud SDK'
+        uses: 'google-github-actions/setup-gcloud@v3'
+
+      - name: Upload to prql-dev
+        run: |
+          gcloud artifacts generic upload \
+            --project="prql-dev" \
+            --location=${{ env.GAR_LOCATION }} \
+            --repository=${{ env.GAR_REPOSITORY }} \
+            --package=${{ env.GAR_PACKAGE }} \
+            --version=${{ github.sha }} \
+            --source=duck_delta_share_extensions.tar.gz
+
+      - name: Upload to prql-prod (Release)
+        if: github.event_name == 'release'
+        run: |
+          gcloud artifacts generic upload \
+            --project="prql-prod" \
+            --location=${{ env.GAR_LOCATION }} \
+            --repository=${{ env.GAR_REPOSITORY }} \
+            --package=${{ env.GAR_PACKAGE }} \
+            --version=${{ github.event.release.tag_name }} \
+            --source=duck_delta_share_extensions.tar.gz

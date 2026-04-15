@@ -8,17 +8,34 @@ set(TARGET_NAME duck_delta_share)
 # Note that it should also be removed from vcpkg.json to prevent needlessly installing it..
 find_package(OpenSSL REQUIRED)
 find_package(CURL REQUIRED)
-find_package(nlohmann_json REQUIRED)
+find_package(nlohmann_json QUIET)
+if(NOT nlohmann_json_FOUND)
+    include(FetchContent)
+    FetchContent_Declare(
+        nlohmann_json
+        URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz
+    )
+    FetchContent_MakeAvailable(nlohmann_json)
+endif()
+
 find_path(CROARING_INCLUDE_DIR roaring/roaring.h HINTS /opt/homebrew/include)
 find_library(CROARING_LIBRARY NAMES roaring HINTS /opt/homebrew/lib)
 if(CROARING_INCLUDE_DIR AND CROARING_LIBRARY)
-    add_library(croaring UNKNOWN IMPORTED)
-    set_target_properties(croaring PROPERTIES
+    add_library(roaring UNKNOWN IMPORTED)
+    set_target_properties(roaring PROPERTIES
         IMPORTED_LOCATION "${CROARING_LIBRARY}"
         INTERFACE_INCLUDE_DIRECTORIES "${CROARING_INCLUDE_DIR}"
     )
+elseif(TARGET roaring::roaring)
+    # Target already provided via VCPKG or config
 else()
-    message(FATAL_ERROR "croaring not found")
+    include(FetchContent)
+    FetchContent_Declare(
+        roaring
+        GIT_REPOSITORY https://github.com/RoaringBitmap/CRoaring.git
+        GIT_TAG v4.6.1
+    )
+    FetchContent_MakeAvailable(roaring)
 endif()
 
 set(EXTENSION_NAME ${TARGET_NAME}_extension)
@@ -39,8 +56,8 @@ build_static_extension(${TARGET_NAME} ${EXTENSION_SOURCES})
 build_loadable_extension(${TARGET_NAME} " " ${EXTENSION_SOURCES})
 
 # Link dependencies in both the static library as the loadable extension
-target_link_libraries(${EXTENSION_NAME} OpenSSL::SSL OpenSSL::Crypto CURL::libcurl nlohmann_json::nlohmann_json croaring)
-target_link_libraries(${LOADABLE_EXTENSION_NAME} OpenSSL::SSL OpenSSL::Crypto CURL::libcurl nlohmann_json::nlohmann_json croaring)
+target_link_libraries(${EXTENSION_NAME} OpenSSL::SSL OpenSSL::Crypto CURL::libcurl nlohmann_json::nlohmann_json roaring)
+target_link_libraries(${LOADABLE_EXTENSION_NAME} OpenSSL::SSL OpenSSL::Crypto CURL::libcurl nlohmann_json::nlohmann_json roaring)
 
 target_include_directories(${EXTENSION_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/duckdb/extension/parquet/include")
 target_include_directories(${LOADABLE_EXTENSION_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/duckdb/extension/parquet/include")
@@ -50,3 +67,14 @@ install(
   EXPORT "${DUCKDB_EXPORT_SET}"
   LIBRARY DESTINATION "${INSTALL_LIB_DIR}"
   ARCHIVE DESTINATION "${INSTALL_LIB_DIR}")
+
+if(NOT nlohmann_json_FOUND)
+    install(TARGETS nlohmann_json EXPORT "${DUCKDB_EXPORT_SET}")
+endif()
+
+if(NOT CROARING_INCLUDE_DIR)
+    install(TARGETS roaring 
+        EXPORT "${DUCKDB_EXPORT_SET}"
+        LIBRARY DESTINATION "${INSTALL_LIB_DIR}"
+        ARCHIVE DESTINATION "${INSTALL_LIB_DIR}")
+endif()
