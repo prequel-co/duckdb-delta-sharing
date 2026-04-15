@@ -3,4 +3,10 @@
 # group: [sql]
 
 # Require statement will ensure this test is run with this extension loaded
+require parquet
+
+require json
+
+require httpfs
+
 require duck_delta_share

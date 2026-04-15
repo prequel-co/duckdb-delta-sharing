@@ -40,9 +40,21 @@ struct DeltaShareListFilesBindData : public FunctionData {
     }
 };
 
+} // namespace duckdb
+
+#include "duckdb/main/extension.hpp"
+
+#ifdef DUCKDB_CPP_EXTENSION_ENTRY
+#define DUCK_DELTA_SHARE_EXTENSION_LOAD_PARAM duckdb::ExtensionLoader &db
+#else
+#define DUCK_DELTA_SHARE_EXTENSION_LOAD_PARAM duckdb::DuckDB &db
+#endif
+
+namespace duckdb {
+
 class DuckDeltaShareExtension : public Extension {
 public:
-	void Load(ExtensionLoader &db) override;
+	void Load(DUCK_DELTA_SHARE_EXTENSION_LOAD_PARAM) override;
 	std::string Name() override;
 	std::string Version() const override;
 };
