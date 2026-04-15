@@ -50,6 +50,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Fetch Submodule Tags
+        run: git submodule foreach "git fetch origin --tags"
 
       - name: Setup C++
         if: matrix.os != 'windows-latest'
@@ -175,36 +180,11 @@ jobs:
           cd gar_artifacts
           tar -czf ../duckdb-${{ matrix.arch }}.tar.gz .
 
-      - name: Authenticate GCP
-        uses: google-github-actions/auth@v3
+      - name: Upload Compressed Artifact
+        uses: actions/upload-artifact@v4
         with:
-          credentials_json: ${{ secrets.GCP_ARTIFACT_REGISTRY_SA_JSON }}
-
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v3
-
-      - name: Upload to prql-dev GAR
-        shell: bash
-        run: |
-          gcloud artifacts generic upload \
-            --project="prql-dev" \
-            --location="us" \
-            --repository="duckdb" \
-            --package="delta_sharing" \
-            --version=${{ github.sha }} \
-            --source=duckdb-${{ matrix.arch }}.tar.gz
-
-      - name: Upload to prql-prod GAR
-        if: github.event_name == 'release'
-        shell: bash
-        run: |
-          gcloud artifacts generic upload \
-            --project="prql-prod" \
-            --location="us" \
-            --repository="duckdb" \
-            --package="delta_sharing" \
-            --version=${{ github.event.release.tag_name }} \
-            --source=duckdb-${{ matrix.arch }}.tar.gz
+          name: duckdb-compressed-${{ matrix.arch }}
+          path: duckdb-${{ matrix.arch }}.tar.gz
 
   bundle-macos-universal:
     name: Create MacOS Universal Binary
@@ -236,36 +216,11 @@ jobs:
         run: |
           tar -czf duckdb-osx_universal.tar.gz duckdb
 
-      - name: Authenticate GCP
-        uses: google-github-actions/auth@v3
+      - name: Upload Compressed Artifact
+        uses: actions/upload-artifact@v4
         with:
-          credentials_json: ${{ secrets.GCP_ARTIFACT_REGISTRY_SA_JSON }}
-
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v3
-
-      - name: Upload to prql-dev GAR
-        shell: bash
-        run: |
-          gcloud artifacts generic upload \
-            --project="prql-dev" \
-            --location="us" \
-            --repository="duckdb" \
-            --package="delta_sharing" \
-            --version=${{ github.sha }} \
-            --source=duckdb-osx_universal.tar.gz
-
-      - name: Upload to prql-prod GAR
-        if: github.event_name == 'release'
-        shell: bash
-        run: |
-          gcloud artifacts generic upload \
-            --project="prql-prod" \
-            --location="us" \
-            --repository="duckdb" \
-            --package="delta_sharing" \
-            --version=${{ github.event.release.tag_name }} \
-            --source=duckdb-osx_universal.tar.gz
+          name: duckdb-compressed-osx_universal
+          path: duckdb-osx_universal.tar.gz
 
   e2e-test-bundled:
     name: E2E Test (Bundled)
@@ -287,3 +242,53 @@ jobs:
           chmod +x build/release/duckdb
           chmod +x test/integration/run_e2e_bundled_tests.sh
           ./test/integration/run_e2e_bundled_tests.sh
+
+  upload-bundled-binaries-gar:
+    name: Upload Bundled Binaries to GAR
+    needs: [build-binaries, bundle-macos-universal]
+    runs-on: ubuntu-latest
+    if: always() && needs.build-binaries.result == 'success' && !cancelled()
+    steps:
+      - name: Download Compressed Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: duckdb-compressed-*
+          path: compressed-artifacts
+          merge-multiple: true
+
+      - name: Authenticate GCP
+        uses: google-github-actions/auth@v3
+        with:
+          credentials_json: ${{ secrets.GCP_ARTIFACT_REGISTRY_SA_JSON }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Upload to prql-dev GAR
+        shell: bash
+        run: |
+          for file in compressed-artifacts/*.tar.gz; do
+            echo "Uploading $file to prql-dev..."
+            gcloud artifacts generic upload \
+              --project="prql-dev" \
+              --location="us" \
+              --repository="duckdb" \
+              --package="delta_sharing_bundled" \
+              --version=${{ github.sha }} \
+              --source="$file"
+          done
+
+      - name: Upload to prql-prod GAR
+        if: github.event_name == 'release'
+        shell: bash
+        run: |
+          for file in compressed-artifacts/*.tar.gz; do
+            echo "Uploading $file to prql-prod..."
+            gcloud artifacts generic upload \
+              --project="prql-prod" \
+              --location="us" \
+              --repository="duckdb" \
+              --package="delta_sharing_bundled" \
+              --version=${{ github.event.release.tag_name }} \
+              --source="$file"
+          done
