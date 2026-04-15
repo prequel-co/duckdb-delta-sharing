@@ -295,6 +295,20 @@ static unique_ptr<FunctionData> ReadDeltaShareBind(
     TableFunctionBindInput inner_input(inputs_list, input.named_parameters, input.input_table_types, input.input_table_names, read_parquet.function_info.get(), input.binder, read_parquet, input.ref);
     auto bind_data = read_parquet.bind(context, inner_input, return_types, names);
 
+    std::unordered_map<string, string> physical_to_logical;
+    for (const auto& pair : ds_file_list->column_mapping) {
+        physical_to_logical[pair.second] = pair.first;
+    }
+
+    if (!physical_to_logical.empty()) {
+        for (auto& name : names) {
+            auto it = physical_to_logical.find(name);
+            if (it != physical_to_logical.end()) {
+                name = it->second;
+            }
+        }
+    }
+
     // 5. Populate our MultiFileList so that the MultiFileReader has access to DeletionVectors and partition metadata!
     auto &multi_file_bind = bind_data->Cast<MultiFileBindData>();
     
@@ -436,6 +450,20 @@ static unique_ptr<FunctionData> ReadDeltaShareCdfBind(
 
     TableFunctionBindInput inner_input(inputs_list, input.named_parameters, input.input_table_types, input.input_table_names, read_parquet.function_info.get(), input.binder, read_parquet, input.ref);
     auto bind_data = read_parquet.bind(context, inner_input, return_types, names);
+
+    std::unordered_map<string, string> physical_to_logical;
+    for (const auto& pair : ds_file_list->column_mapping) {
+        physical_to_logical[pair.second] = pair.first;
+    }
+
+    if (!physical_to_logical.empty()) {
+        for (auto& name : names) {
+            auto it = physical_to_logical.find(name);
+            if (it != physical_to_logical.end()) {
+                name = it->second;
+            }
+        }
+    }
 
     auto &multi_file_bind = bind_data->Cast<MultiFileBindData>();
     multi_file_bind.file_options.auto_detect_hive_partitioning = false;
