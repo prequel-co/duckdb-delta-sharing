@@ -79,6 +79,7 @@ jobs:
           OSX_BUILD_ARCH=${{ (matrix.arch == 'osx_amd64' && 'x86_64') || (matrix.arch == 'osx_arm64' && 'arm64') || '' }} \
           VCPKG_TARGET_TRIPLET=${{ (matrix.arch == 'osx_amd64' && 'x64-osx') || (matrix.arch == 'osx_arm64' && 'arm64-osx') || (matrix.arch == 'linux_amd64' && 'x64-linux') || (matrix.arch == 'linux_arm64' && 'arm64-linux') || '' }} \
           make ${{ matrix.target }}
+          cmake --build build/${{ matrix.target }} --target duckdb
         env:
           GEN: ninja
 
@@ -157,17 +158,6 @@ jobs:
 
 
 
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: duckdb-${{ matrix.arch }}
-          path: |
-            build/release/duckdb
-            build/release/duckdb.exe
-            build/duckdb-odbc/build/release/libduckdb_odbc.dylib
-            build/duckdb-odbc/build/release/duckdb_odbc.dll
-            build/duckdb-odbc/build/release/duckdb_odbc.lib
-
       - name: Compress Artifacts
         shell: bash
         run: |
@@ -179,6 +169,12 @@ jobs:
           cp build/duckdb-odbc/build/release/duckdb_odbc.lib gar_artifacts/ 2>/dev/null || true
           cd gar_artifacts
           tar -czf ../duckdb-${{ matrix.arch }}.tar.gz .
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: duckdb-${{ matrix.arch }}
+          path: gar_artifacts/*
 
       - name: Upload Compressed Artifact
         uses: actions/upload-artifact@v4
