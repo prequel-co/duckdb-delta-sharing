@@ -67,9 +67,123 @@ ReaderInitializeType DeltaShareMultiFileReader::InitializeReader(
         optional_ptr<TableFilterSet> table_filters,
         ClientContext &context, MultiFileGlobalState &gstate) {
 
-    FinalizeBind(reader_data, bind_data.file_options, bind_data.reader_bind, global_columns, global_column_ids, context, gstate.multi_file_reader_state);
+    // 1. DuckDB's Phase 1 is FinalizeBind. This produces the default mapping, capturing missing columns
+    //    and pushing them into reader_data.constant_map. We call it here explicitly.
+    FinalizeBind(reader_data, bind_data.file_options, bind_data.reader_bind, global_columns, global_column_ids, context, gstate.multi_file_reader_state.get());
 
-    return MultiFileReader::InitializeReader(reader_data, bind_data, global_columns, global_column_ids, table_filters, context, gstate);
+    // 2. NOW we inject our Constants BEFORE DuckDB creates the mapping expression tree!
+    auto *share_file_list = dynamic_cast<const DeltaShareMultiFileList*>(bind_data.file_list.get());
+    if (share_file_list && reader_data.reader && reader_data.reader->file_list_idx.IsValid()) {
+        idx_t file_index = reader_data.reader->file_list_idx.GetIndex();
+        if (file_index < share_file_list->files.size()) {
+            const auto &delta_file = share_file_list->files[file_index];
+            auto* partitionValuesJson = static_cast<const nlohmann::json*>(delta_file.partition_values.GetInternalPtr());
+
+            if (partitionValuesJson && partitionValuesJson->is_object()) {
+                for (idx_t i = 0; i < global_column_ids.size(); i++) {
+                    auto global_idx = MultiFileGlobalIndex(i);
+                    column_t col_id = global_column_ids[i].GetPrimaryIndex();
+
+                    if (IsVirtualColumn(col_id)) {
+                        continue;
+                    }
+
+                    const string &col_name = global_columns[col_id].name;
+                    bool should_add = false;
+                    Value val;
+
+                    if (partitionValuesJson->contains(col_name)) {
+                        const auto &val_entry = (*partitionValuesJson)[col_name];
+                        auto &current_type = global_columns[col_id].type;
+
+                        if (val_entry.is_null()) {
+                            val = Value(current_type);
+                        } else if (val_entry.is_string()) {
+                            val = Value(val_entry.get<string>()).DefaultCastAs(current_type);
+                        } else if (val_entry.is_boolean()) {
+                            val = Value::BOOLEAN(val_entry.get<bool>()).DefaultCastAs(current_type);
+                        } else if (val_entry.is_number_integer()) {
+                            val = Value::BIGINT(val_entry.get<int64_t>()).DefaultCastAs(current_type);
+                        } else if (val_entry.is_number_float()) {
+                            val = Value::DOUBLE(val_entry.get<double>()).DefaultCastAs(current_type);
+                        } else {
+                            val = Value(val_entry.dump()).DefaultCastAs(current_type);
+                        }
+                        should_add = true;
+                    } else if (col_name == "_change_type" && !delta_file.cdf_action_type.empty()) {
+                        val = Value(delta_file.cdf_action_type);
+                        should_add = true;
+                    } else if (col_name == "_commit_version" && delta_file.version >= 0) {
+                        val = Value::BIGINT(delta_file.version);
+                        should_add = true;
+                    } else if (col_name == "_commit_timestamp" && delta_file.timestamp > 0) {
+                        int64_t ms = delta_file.timestamp;
+                        val = Value::TIMESTAMP(duckdb::timestamp_t(ms * 1000));
+                        should_add = true;
+                    }
+
+                    if (should_add) {
+                        bool found = false;
+                        for (auto &entry : reader_data.constant_map) {
+                            if (entry.column_idx.GetIndex() == global_idx.GetIndex()) {
+                                entry.value = val;
+                                found = true;
+                                break;
+                            }
+                        }
+                        if (!found) {
+                            reader_data.constant_map.Add(global_idx, std::move(val));
+                        }
+                    }
+                }
+            }
+
+            if (delta_file.has_deletion_vector) {
+                const auto &dv_meta = delta_file.deletion_vector;
+                roaring::api::roaring_bitmap_t *dv_bitmap = nullptr;
+
+                if (dv_meta.storage_type == "u" || dv_meta.storage_type == "i") { 
+                    try {
+                        auto decoded = Z85::Decode(dv_meta.path_or_inline_dv);
+                        if (decoded.size() > 4) {
+                            dv_bitmap = roaring::api::roaring_bitmap_portable_deserialize((const char*)decoded.data() + 4);
+                        } else if (decoded.size() > 0) {
+                             dv_bitmap = roaring::api::roaring_bitmap_portable_deserialize((const char*)decoded.data());
+                        }
+                    } catch (const std::exception &e) {
+                        throw IOException("Failed to decode inline Deletion Vector: " + std::string(e.what()));
+                    }
+                } else if (dv_meta.storage_type == "p") {
+                    try {
+                        auto &fs = FileSystem::GetFileSystem(context);
+                        auto handle = fs.OpenFile(dv_meta.path_or_inline_dv, FileFlags::FILE_FLAGS_READ);
+                        auto size = handle->GetFileSize();
+                        string raw_data;
+                        raw_data.resize(size);
+                        handle->Read((void *)raw_data.data(), size);
+                        
+                        if (size > 4) {
+                            // Skip the 4-byte size preamble
+                            dv_bitmap = roaring::api::roaring_bitmap_portable_deserialize((const char*)raw_data.data() + 4);
+                        } else {
+                            throw IOException("Remote Deletion Vector file too small");
+                        }
+                    } catch (const std::exception &e) {
+                         throw IOException("Failed to fetch remote Deletion Vector: " + std::string(e.what()));
+                    }
+                } else {
+                    throw NotImplementedException("Remote Deletion Vectors (storageType: " + dv_meta.storage_type + ") are not supported.");
+                }
+
+                if (dv_bitmap) {
+                    reader_data.reader->deletion_filter = make_uniq<DeltaShareDeleteFilter>(dv_bitmap);
+                }
+            }
+        }
+    }
+
+    // 3. DuckDB's Phase 2 is CreateMapping, mapping physical variables to expression pointers referencing constant_map
+    return CreateMapping(context, reader_data, global_columns, global_column_ids, table_filters, gstate.file_list, bind_data.reader_bind, bind_data.virtual_columns);
 }
 
 void DeltaShareMultiFileReader::FinalizeBind(
@@ -79,17 +193,13 @@ void DeltaShareMultiFileReader::FinalizeBind(
         const vector<ColumnIndex> &global_column_ids, ClientContext &context,
         optional_ptr<MultiFileReaderGlobalState> global_state) {
 
-    // Safety check because MultiFileReader intercepts bindings
     if (!global_state || !global_state->file_list) {
         MultiFileReader::FinalizeBind(reader_data, file_options, options, global_columns, global_column_ids, context, global_state);
         return;
     }
 
-    // Get the DeltaShareMultiFileList
     auto *share_file_list = dynamic_cast<const DeltaShareMultiFileList*>(global_state->file_list.get());
     
-    // If we have a column mapping, we need to temporarily map the global_columns to physical names
-    // so that the base MultiFileReader can match them against the Parquet file's schema.
     if (share_file_list && !share_file_list->column_mapping.empty()) {
         vector<MultiFileColumnDefinition> mapped_columns = global_columns;
         for (auto &col : mapped_columns) {
@@ -100,81 +210,9 @@ void DeltaShareMultiFileReader::FinalizeBind(
         }
         MultiFileReader::FinalizeBind(reader_data, file_options, options, mapped_columns, global_column_ids, context, global_state);
     } else {
-        // No mapping needed or not a Delta Share file list
+        // Note: We leave FinalizeBind just for the column_mapping name rewrites.
+        // The constant map injection logic is moving entirely back to InitializeReader where it belongs.
         MultiFileReader::FinalizeBind(reader_data, file_options, options, global_columns, global_column_ids, context, global_state);
-    }
-
-    if (!share_file_list) return;
-
-    idx_t file_index = reader_data.reader->file_list_idx.GetIndex();
-    if (file_index >= share_file_list->files.size()) return;
-
-    const auto &delta_file = share_file_list->files[file_index];
-
-    // Push Partition Values into reader_data.constant_map
-    // file_metadata.partition_map isn't easily mapped. So we map our own JSON partitions!
-    auto* partitionValuesJson = static_cast<const nlohmann::json*>(delta_file.partition_values.GetInternalPtr());
-
-    if (partitionValuesJson && partitionValuesJson->is_object()) {
-        for (idx_t i = 0; i < global_column_ids.size(); i++) {
-            auto global_idx = MultiFileGlobalIndex(i);
-            column_t col_id = global_column_ids[i].GetPrimaryIndex();
-
-            if (IsVirtualColumn(col_id)) {
-                continue;
-            }
-
-            const string &col_name = global_columns[col_id].name;
-            if (partitionValuesJson->contains(col_name)) {
-                const auto &val_entry = (*partitionValuesJson)[col_name];
-                Value val;
-                auto &current_type = global_columns[col_id].type;
-
-                if (val_entry.is_null()) {
-                    val = Value(current_type);
-                } else if (val_entry.is_string()) {
-                    val = Value(val_entry.get<string>()).DefaultCastAs(current_type);
-                } else if (val_entry.is_boolean()) {
-                    val = Value::BOOLEAN(val_entry.get<bool>()).DefaultCastAs(current_type);
-                } else if (val_entry.is_number_integer()) {
-                    val = Value::BIGINT(val_entry.get<int64_t>()).DefaultCastAs(current_type);
-                } else if (val_entry.is_number_float()) {
-                    val = Value::DOUBLE(val_entry.get<double>()).DefaultCastAs(current_type);
-                } else {
-                    val = Value(val_entry.dump()).DefaultCastAs(current_type);
-                }
-                
-                reader_data.constant_map.Add(global_idx, val);
-            }
-        }
-    }
-
-    // Attach Deletion Vector
-    if (delta_file.has_deletion_vector) {
-        const auto &dv_meta = delta_file.deletion_vector;
-        roaring::api::roaring_bitmap_t *dv_bitmap = nullptr;
-
-        if (dv_meta.storage_type == "u" || dv_meta.storage_type == "i") { // Inline (Z85)
-            try {
-                auto decoded = Z85::Decode(dv_meta.path_or_inline_dv);
-                // Delta DVs are serialized as: 4 bytes (size) + roaring bitmap in portable format.
-                if (decoded.size() > 4) {
-                    dv_bitmap = roaring::api::roaring_bitmap_portable_deserialize((const char*)decoded.data() + 4);
-                } else if (decoded.size() > 0) {
-                     // Some versions might omit the size header if it's raw
-                     dv_bitmap = roaring::api::roaring_bitmap_portable_deserialize((const char*)decoded.data());
-                }
-            } catch (const std::exception &e) {
-                throw IOException("Failed to decode inline Deletion Vector: " + std::string(e.what()));
-            }
-        } else {
-            // Remote DV - will require an HTTP fetch. For now, we throw until the client can fetch it.
-            throw NotImplementedException("Remote Deletion Vectors (storageType: " + dv_meta.storage_type + ") are not yet supported.");
-        }
-
-        if (dv_bitmap) {
-            reader_data.reader->deletion_filter = make_uniq<DeltaShareDeleteFilter>(dv_bitmap);
-        }
     }
 }
 

@@ -91,5 +91,22 @@ SELECT * FROM delta_share_change_data_feed('${SHARE}', '${SCHEMA}', 'orders', 0)
 "
 $DUCKDB_PATH -unsigned -c "$QUERY_CDF"
 
+QUERY_CDF_COUNT="
+LOAD '${EXT_PATH}';
+LOAD httpfs;
+SET delta_sharing_endpoint='${DB_ENDPOINT}';
+SET delta_sharing_bearer_token='${DB_TOKEN}';
+
+SELECT count(*) FROM delta_share_change_data_feed('${SHARE}', '${SCHEMA}', 'orders', 0);
+"
+
+CDF_COUNT=$($DUCKDB_PATH -unsigned -csv -noheader -c "$QUERY_CDF_COUNT" | tr -d '[:space:]')
+echo "CDF Total Row Count: $CDF_COUNT"
+
+if [[ -z "$CDF_COUNT" || "$CDF_COUNT" -eq 0 ]]; then
+    echo "ERROR: CDF returned 0 rows! Expected > 0"
+    exit 1
+fi
+
 echo "---------------------------------------------------------"
 echo "Integration Test completed successfully."

@@ -75,8 +75,8 @@ struct FileAction {
     JsonValue partition_values;
     int64_t size;
     JsonValue stats; // Optional
-    int64_t version; // Optional
-    int64_t timestamp; // Optional
+    int64_t version = -1; // Optional
+    int64_t timestamp = -1; // Optional
     std::string expiration_timestamp; // Optional
     bool has_deletion_vector = false;
     DeletionVector deletion_vector;
