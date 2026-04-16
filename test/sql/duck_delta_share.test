@@ -1,0 +1,6 @@
+# name: test/sql/duck_delta_share.test
+# description: test duck_delta_share extension
+# group: [sql]
+
+# Require statement will ensure this test is run with this extension loaded
+require duck_delta_share
