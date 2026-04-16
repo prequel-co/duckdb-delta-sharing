@@ -622,7 +622,50 @@ DeltaSharingClient::QueryTableResult DeltaSharingClient::QueryTableChanges(
                 auto* line_json = static_cast<json*>(line.GetInternalPtr());
                 if (!line_json || !line_json->is_object()) continue;
 
-                if (line_json->contains("add")) {
+                if (line_json->contains("file")) {
+                    auto &file_top = line_json->at("file");
+                    int64_t top_version = -1;
+                    int64_t top_timestamp = -1;
+                    if (file_top.contains("v")) {
+                        top_version = file_top.at("v").get<int64_t>();
+                    } else if (file_top.contains("version")) {
+                        top_version = file_top.at("version").get<int64_t>();
+                    }
+                    
+                    if (file_top.contains("timestamp")) {
+                        top_timestamp = file_top.at("timestamp").get<int64_t>();
+                    }
+
+                    if (file_top.contains("deltaSingleAction")) {
+                        auto &single_action = file_top.at("deltaSingleAction");
+                        if (single_action.contains("add")) {
+                            FileAction file;
+                            ParseFileAction(JsonValue::FromInternal(&single_action.at("add")), file, "add");
+                            if (top_version >= 0) file.version = top_version;
+                            if (top_timestamp >= 0) file.timestamp = top_timestamp;
+                            result.files.push_back(file);
+                        } else if (single_action.contains("cdc") || single_action.contains("cdf")) {
+                            std::string action_key = single_action.contains("cdc") ? "cdc" : "cdf";
+                            FileAction file;
+                            ParseFileAction(JsonValue::FromInternal(&single_action.at(action_key)), file, "cdf"); // Map both to 'cdf' / 'update' logic
+                            if (top_version >= 0) file.version = top_version;
+                            if (top_timestamp >= 0) file.timestamp = top_timestamp;
+                            result.files.push_back(file);
+                        } else if (single_action.contains("remove")) {
+                            FileAction file;
+                            ParseFileAction(JsonValue::FromInternal(&single_action.at("remove")), file, "remove");
+                            if (top_version >= 0) file.version = top_version;
+                            if (top_timestamp >= 0) file.timestamp = top_timestamp;
+                            result.files.push_back(file);
+                        }
+                    } else {
+                        FileAction file;
+                        ParseFileAction(JsonValue::FromInternal(&file_top), file, "");
+                        if (top_version >= 0) file.version = top_version;
+                        if (top_timestamp >= 0) file.timestamp = top_timestamp;
+                        result.files.push_back(file);
+                    }
+                } else if (line_json->contains("add")) {
                     FileAction file;
                     ParseFileAction(JsonValue::FromInternal(&line_json->at("add")), file, "add");
                     result.files.push_back(file);

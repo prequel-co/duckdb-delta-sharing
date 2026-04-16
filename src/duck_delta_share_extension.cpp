@@ -315,7 +315,7 @@ static unique_ptr<FunctionData> ReadDeltaShareBind(
     // Disable inference to respect Delta Sharing strict json typings
     multi_file_bind.file_options.auto_detect_hive_partitioning = false;
     multi_file_bind.file_options.hive_partitioning = false;
-    multi_file_bind.file_options.union_by_name = false;
+    multi_file_bind.file_options.union_by_name = true;
     
     for (const auto& col : ds_file_list->partition_columns) {
         auto it = std::find(names.begin(), names.end(), col);
@@ -323,7 +323,9 @@ static unique_ptr<FunctionData> ReadDeltaShareBind(
             names.push_back(col);
             return_types.push_back(LogicalType::VARCHAR);
             MultiFileColumnDefinition col_def(col, LogicalType::VARCHAR);
-            multi_file_bind.reader_bind.schema.push_back(col_def); 
+            multi_file_bind.columns.push_back(col_def);
+            multi_file_bind.names.push_back(col);
+            multi_file_bind.types.push_back(LogicalType::VARCHAR);
         }
     }
     
@@ -383,31 +385,27 @@ static unique_ptr<FunctionData> ReadDeltaShareCdfBind(
     
     auto query_result = client.QueryTableChanges(share_name, schema_name, table_name, starting_version, ending_version, starting_timestamp, ending_timestamp);
 
-    // CDF always has these 3 columns
-    DeltaSharingClient::ParseSparkSchema(query_result.metadata.schema_string, return_types, names);
-    
-    // Add partition columns
-    auto* partition_cols_json = static_cast<json*>(query_result.metadata.partition_columns.GetInternalPtr());
-    for (const auto& col_json : *partition_cols_json) {
-        string col = col_json.get<string>();
-        if (std::find(names.begin(), names.end(), col) == names.end()) {
-            names.push_back(col);
-            return_types.push_back(LogicalType::VARCHAR);
-        }
-    }
-
-    // Add CDF Metadata Columns
-    vector<string> cdf_cols = {"_change_type", "_commit_version", "_commit_timestamp"};
-    vector<LogicalType> cdf_types = {LogicalType::VARCHAR, LogicalType::BIGINT, LogicalType::TIMESTAMP};
-    
-    for (size_t i = 0; i < cdf_cols.size(); i++) {
-        if (std::find(names.begin(), names.end(), cdf_cols[i]) == names.end()) {
-            names.push_back(cdf_cols[i]);
-            return_types.push_back(cdf_types[i]);
-        }
-    }
-
     if (query_result.files.empty()) {
+        DeltaSharingClient::ParseSparkSchema(query_result.metadata.schema_string, return_types, names);
+        
+        auto* partition_cols_json = static_cast<json*>(query_result.metadata.partition_columns.GetInternalPtr());
+        for (const auto& col_json : *partition_cols_json) {
+            string col = col_json.get<string>();
+            if (std::find(names.begin(), names.end(), col) == names.end()) {
+                names.push_back(col);
+                return_types.push_back(LogicalType::VARCHAR);
+            }
+        }
+
+        vector<string> cdf_cols = {"_change_type", "_commit_version", "_commit_timestamp"};
+        vector<LogicalType> cdf_types = {LogicalType::VARCHAR, LogicalType::BIGINT, LogicalType::TIMESTAMP};
+        for (size_t i = 0; i < cdf_cols.size(); i++) {
+            if (std::find(names.begin(), names.end(), cdf_cols[i]) == names.end()) {
+                names.push_back(cdf_cols[i]);
+                return_types.push_back(cdf_types[i]);
+            }
+        }
+
         auto ds_file_list = shared_ptr<DeltaShareMultiFileList>(new DeltaShareMultiFileList({}, {}, std::move(query_result.metadata)));
         auto bind_data = make_uniq<MultiFileBindData>();
         bind_data->types = return_types;
@@ -430,11 +428,7 @@ static unique_ptr<FunctionData> ReadDeltaShareCdfBind(
         open_file_infos.push_back({file.url});
         
         if (file.cdf_action_type == "add" || file.cdf_action_type == "remove") {
-            auto* part_vals_json = static_cast<json*>(file.partition_values.GetInternalPtr());
-            (*part_vals_json)["_change_type"] = (file.cdf_action_type == "add") ? "insert" : "delete";
-            (*part_vals_json)["_commit_version"] = file.version;
-            // Delta Lake timestamps are in milliseconds, DuckDB TIMESTAMP is in microseconds
-            (*part_vals_json)["_commit_timestamp"] = file.timestamp * 1000;
+            // No manual metadata appending to JSON needed, InitializeReader handles them natively.
         }
     }
 
@@ -445,10 +439,14 @@ static unique_ptr<FunctionData> ReadDeltaShareCdfBind(
     auto &func_entry = catalog.GetEntry<TableFunctionCatalogEntry>(context, DEFAULT_SCHEMA, "read_parquet");
     auto read_parquet = func_entry.functions.GetFunctionByArguments(context, {LogicalType::LIST(LogicalType::VARCHAR)});
 
+    read_parquet.get_multi_file_reader = CreateDeltaShareMultiFileReader;
+
     vector<Value> inputs_list;
     inputs_list.push_back(Value::LIST(LogicalType::VARCHAR, parquet_urls));
 
     TableFunctionBindInput inner_input(inputs_list, input.named_parameters, input.input_table_types, input.input_table_names, read_parquet.function_info.get(), input.binder, read_parquet, input.ref);
+    
+    // Do NOT pass modified return_types/names yet to prevent Parquet scanner column mismatch
     auto bind_data = read_parquet.bind(context, inner_input, return_types, names);
 
     std::unordered_map<string, string> physical_to_logical;
@@ -468,24 +466,35 @@ static unique_ptr<FunctionData> ReadDeltaShareCdfBind(
     auto &multi_file_bind = bind_data->Cast<MultiFileBindData>();
     multi_file_bind.file_options.auto_detect_hive_partitioning = false;
     multi_file_bind.file_options.hive_partitioning = false;
-    multi_file_bind.file_options.union_by_name = false;
+    multi_file_bind.file_options.union_by_name = true;
 
-    // Ensure all columns (including CDF and Partition ones) are in the schema
-    for (size_t i = 0; i < names.size(); i++) {
-        bool found = false;
-        for (const auto& col_def : multi_file_bind.reader_bind.schema) {
-            if (col_def.name == names[i]) {
-                found = true;
-                break;
-            }
-        }
-        if (!found) {
-            multi_file_bind.reader_bind.schema.push_back(MultiFileColumnDefinition(names[i], return_types[i]));
+    // Now safely append partition and CDF columns to schema
+    for (const auto& col : ds_file_list->partition_columns) {
+        if (std::find(names.begin(), names.end(), col) == names.end()) {
+            names.push_back(col);
+            return_types.push_back(LogicalType::VARCHAR);
+            MultiFileColumnDefinition col_def(col, LogicalType::VARCHAR);
+            multi_file_bind.columns.push_back(col_def);
+            multi_file_bind.names.push_back(col);
+            multi_file_bind.types.push_back(LogicalType::VARCHAR);
         }
     }
-    
+
+    vector<string> cdf_cols = {"_change_type", "_commit_version", "_commit_timestamp"};
+    vector<LogicalType> cdf_types = {LogicalType::VARCHAR, LogicalType::BIGINT, LogicalType::TIMESTAMP};
+    for (size_t i = 0; i < cdf_cols.size(); i++) {
+        if (std::find(names.begin(), names.end(), cdf_cols[i]) == names.end()) {
+            names.push_back(cdf_cols[i]);
+            return_types.push_back(cdf_types[i]);
+            MultiFileColumnDefinition col_def(cdf_cols[i], cdf_types[i]);
+            multi_file_bind.columns.push_back(col_def);
+            multi_file_bind.names.push_back(cdf_cols[i]);
+            multi_file_bind.types.push_back(cdf_types[i]);
+        }
+    }
+
     multi_file_bind.file_list = std::move(ds_file_list);
-    multi_file_bind.multi_file_reader = make_uniq<DeltaShareMultiFileReader>();
+
 
     return bind_data;
 }
@@ -614,6 +623,9 @@ static void LoadInternal(DUCK_DELTA_SHARE_EXTENSION_LOAD_PARAM) {
     base_read.function = ReadDeltaShareFunctionWrapper;
     base_read.get_multi_file_reader = CreateDeltaShareMultiFileReader;
     base_read.bind = ReadDeltaShareBind; 
+    base_read.get_partition_stats = nullptr;
+    base_read.statistics = nullptr;
+    base_read.cardinality = nullptr;
     base_read.named_parameters.erase("schema");
 
     TableFunctionSet delta_share_read("delta_share_read");
