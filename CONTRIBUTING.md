@@ -9,9 +9,10 @@ First off, thank you for considering contributing to DuckDB Delta Share! It's pe
 
 ## Building the Extension
 
-To build the extension locally:
+To build the extension locally, you first need to initialize the git submodules (which fetch the DuckDB build tools):
 
 ```bash
+git submodule update --init --recursive
 make release
 ```
 
