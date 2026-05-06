@@ -2,11 +2,6 @@
 
 [![DuckDB Version](https://img.shields.io/badge/DuckDB-v1.5.2-blue)](https://duckdb.org/)
 
-[![forthebadge](https://forthebadge.com/badges/powered-by-black-magic.svg)](https://forthebadge.com)
-[![forthebadge](https://forthebadge.com//badges/check-it-out.svg)](https://forthebadge.com)
-[![forthebadge](https://forthebadge.com/badges/60-percent-of-the-time-works-every-time.svg)](https://forthebadge.com)
-
-
 The most efficient way to query **Delta Lake** tables directly from **DuckDB**. This extension implements the [Delta Sharing protocol](https://delta.io/sharing/), allowing you to stream data from remote Delta Sharing servers with native performance.
 
 ---
@@ -130,4 +125,4 @@ When enabled (`false` by default), the extension sends a Base64-encoded snippet 
 ---
 
 ## 🤝 Developed by Prequel
-This extension is maintained by **Prequel**. For bugs or feature requests, please open an issue in the repository.
+This extension is maintained by [**Prequel**](https://www.prequel.co/). For bugs or feature requests, please open an issue in the repository.

@@ -10,3 +10,6 @@ test/python/__pycache__/
 .cache/
 build_log.txt
 err.txt
+unixODBC*/
+unixODBC*.tar.gz
+vcpkg_installed/
