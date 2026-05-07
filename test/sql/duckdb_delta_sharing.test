@@ -1,5 +1,5 @@
-# name: test/sql/duck_delta_share.test
-# description: test duck_delta_share extension
+# name: test/sql/duckdb_delta_sharing.test
+# description: test duckdb_delta_sharing extension
 # group: [sql]
 
 # Require statement will ensure this test is run with this extension loaded
@@ -9,4 +9,4 @@ require json
 
 require httpfs
 
-require duck_delta_share
+require duckdb_delta_sharing

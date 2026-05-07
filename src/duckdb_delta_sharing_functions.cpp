@@ -1,4 +1,4 @@
-#include "duck_delta_share_functions.hpp"
+#include "duckdb_delta_sharing_functions.hpp"
 #include "duckdb/common/exception.hpp"
 #include "duckdb/planner/expression/bound_conjunction_expression.hpp"
 #include "duckdb/planner/expression/bound_between_expression.hpp"

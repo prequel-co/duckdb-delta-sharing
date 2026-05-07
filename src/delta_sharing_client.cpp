@@ -493,7 +493,7 @@ DeltaSharingClient::QueryTableResult DeltaSharingClient::QueryTable(
 
     std::string post_data = request_body.dump();
     {
-        std::ofstream debug_file("/tmp/duck_delta_share_request.json");
+        std::ofstream debug_file("/tmp/duckdb_delta_sharing_request.json");
         debug_file << post_data;
     }
 
@@ -777,7 +777,9 @@ void DeltaSharingClient::ParseSparkSchema(const std::string &schema_string, vect
 
         auto &fields = schema_json.at("fields");
         for (auto &field : fields) {
-            if (!field.contains("name") || !field.contains("type")) continue;
+            if (!field.contains("name") || !field.contains("type")) {
+                continue;
+            }
 
             string name = field.at("name").get<string>();
             json type_json = field.at("type");
@@ -785,7 +787,6 @@ void DeltaSharingClient::ParseSparkSchema(const std::string &schema_string, vect
             if (type_json.is_string()) {
                 type = type_json.get<string>();
             } else {
-                // Complex or nested types not fully supported yet in empty scan, but we'll try to get the type name if it's an object
                 if (type_json.is_object() && type_json.contains("type")) {
                     type = type_json.at("type").dump();
                 }

@@ -21,7 +21,7 @@ jobs:
     with:
       duckdb_version: v1.5.2
       ci_tools_version: v1.5.1
-      extension_name: duck_delta_share
+      extension_name: duckdb_delta_sharing
       exclude_archs: "wasm_mvp;wasm_eh;wasm_threads;${{ github.event_name == 'pull_request' && 'linux_amd64;linux_arm64;linux_amd64_musl;linux_arm64_musl;osx_amd64;windows_amd64;windows_arm64;windows_amd64_mingw' || '' }}"
 
   # code-quality-check: 
@@ -30,7 +30,7 @@ jobs:
   #   with:
   #     duckdb_version: v1.4.3
   #     ci_tools_version: v1.4.3
-  #     extension_name: duck_delta_share
+  #     extension_name: duckdb_delta_sharing
   #     format_checks: 'format;tidy'
 
   upload-to-gar:
@@ -51,7 +51,7 @@ jobs:
       - name: Tar Artifacts
         run: |
           cd artifacts
-          tar -czf ../duck_delta_share_extensions.tar.gz .
+          tar -czf ../duckdb_delta_sharing_extensions.tar.gz .
       
       - name: Authenticate GCP
         uses: google-github-actions/auth@v3
@@ -69,7 +69,7 @@ jobs:
             --repository=${{ env.GAR_REPOSITORY }} \
             --package=${{ env.GAR_PACKAGE }} \
             --version=${{ github.sha }} \
-            --source=duck_delta_share_extensions.tar.gz
+            --source=duckdb_delta_sharing_extensions.tar.gz
 
       - name: Upload to prql-prod (Release)
         if: github.event_name == 'release'
@@ -80,4 +80,10 @@ jobs:
             --repository=${{ env.GAR_REPOSITORY }} \
             --package=${{ env.GAR_PACKAGE }} \
             --version=${{ github.event.release.tag_name }} \
-            --source=duck_delta_share_extensions.tar.gz
+            --source=duckdb_delta_sharing_extensions.tar.gz
+
+      - name: Upload to GitHub Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: duckdb_delta_sharing_extensions.tar.gz

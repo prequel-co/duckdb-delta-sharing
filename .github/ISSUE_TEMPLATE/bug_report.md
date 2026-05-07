@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Create a report to help us improve duck_delta_share
+about: Create a report to help us improve duckdb_delta_sharing
 title: ''
 labels: bug
 assignees: ''
@@ -21,7 +21,7 @@ A clear and concise description of what you expected to happen.
 
 **Environment details:**
  - DuckDB Version: [e.g. 1.5.2]
- - duck_delta_share Version: [e.g. v0.1.0]
+ - duckdb_delta_sharing Version: [e.g. v0.1.0]
  - OS: [e.g. macOS]
  - Delta Sharing Server: [e.g. Databricks, Unity Catalog, open source]
 

@@ -1,7 +1,7 @@
 # This file is included by DuckDB's build system. It specifies which extension to load
 
 # Extension from this repo
-duckdb_extension_load(duck_delta_share
+duckdb_extension_load(duckdb_delta_sharing
     SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR}
     LOAD_TESTS
 )

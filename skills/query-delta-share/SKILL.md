@@ -7,7 +7,7 @@ allowed-tools: Bash
 ---
 
 You are helping the user query data using DuckDB through the Delta Sharing protocol.
-Assume the DuckDB CLI being executed inherently contains the `duck_delta_share` extension already loaded. No local file detection or local directory traversal logic is necessary.
+Assume the DuckDB CLI being executed inherently contains the `duckdb_delta_sharing` extension already loaded. No local file detection or local directory traversal logic is necessary.
 
 Input: `$@`
 

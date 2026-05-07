@@ -71,7 +71,7 @@ jobs:
         if: matrix.os != 'windows-latest'
         run: |
           CORE_EXTENSIONS="httpfs;parquet;json;icu" \
-          BUILD_EXTENSIONS="httpfs;parquet;json;icu;duck_delta_share" \
+          BUILD_EXTENSIONS="httpfs;parquet;json;icu;duckdb_delta_sharing" \
           VCPKG_BUILD=1 \
           VCPKG_TOOLCHAIN_PATH="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" \
           VCPKG_MANIFEST_DIR="$(pwd)" \
@@ -288,3 +288,9 @@ jobs:
               --version=${{ github.event.release.tag_name }} \
               --source="$file"
           done
+
+      - name: Upload to GitHub Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: compressed-artifacts/*.tar.gz

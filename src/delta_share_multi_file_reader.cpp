@@ -1,5 +1,5 @@
 #include "delta_share_multi_file_reader.hpp"
-#include "duck_delta_share_functions.hpp" // For ParseDeltaSchema if needed
+#include "duckdb_delta_sharing_functions.hpp" // For ParseDeltaSchema if needed
 #include "duckdb/common/types/value.hpp"
 #include "duckdb/common/types/selection_vector.hpp"
 #include "z85.hpp"

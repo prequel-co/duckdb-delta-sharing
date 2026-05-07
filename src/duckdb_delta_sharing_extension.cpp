@@ -1,7 +1,7 @@
 #define DUCKDB_EXTENSION_MAIN
 
-#include "duck_delta_share_extension.hpp"
-#include "duck_delta_share_functions.hpp"
+#include "duckdb_delta_sharing_extension.hpp"
+#include "duckdb_delta_sharing_functions.hpp"
 #include "duckdb.hpp"
 #include "duckdb/common/exception.hpp"
 #include "duckdb/function/scalar_function.hpp"
@@ -295,22 +295,17 @@ static unique_ptr<FunctionData> ReadDeltaShareBind(
     TableFunctionBindInput inner_input(inputs_list, input.named_parameters, input.input_table_types, input.input_table_names, read_parquet.function_info.get(), input.binder, read_parquet, input.ref);
     auto bind_data = read_parquet.bind(context, inner_input, return_types, names);
 
-    std::unordered_map<string, string> physical_to_logical;
-    for (const auto& pair : ds_file_list->column_mapping) {
-        physical_to_logical[pair.second] = pair.first;
-    }
+    // Overwrite the returned schema with the LOGICAL schema from Delta Share!
+    return_types.clear();
+    names.clear();
+    DeltaSharingClient::ParseSparkSchema(ds_file_list->metadata.schema_string, return_types, names);
 
-    if (!physical_to_logical.empty()) {
-        for (auto& name : names) {
-            auto it = physical_to_logical.find(name);
-            if (it != physical_to_logical.end()) {
-                name = it->second;
-            }
-        }
-    }
+    auto &multi_file_bind = bind_data->Cast<MultiFileBindData>();
+    multi_file_bind.types = return_types;
+    multi_file_bind.names = names;
+    multi_file_bind.columns = MultiFileColumnDefinition::ColumnsFromNamesAndTypes(names, return_types);
 
     // 5. Populate our MultiFileList so that the MultiFileReader has access to DeletionVectors and partition metadata!
-    auto &multi_file_bind = bind_data->Cast<MultiFileBindData>();
     
     // Disable inference to respect Delta Sharing strict json typings
     multi_file_bind.file_options.auto_detect_hive_partitioning = false;
@@ -328,6 +323,8 @@ static unique_ptr<FunctionData> ReadDeltaShareBind(
             multi_file_bind.types.push_back(LogicalType::VARCHAR);
         }
     }
+    
+    multi_file_bind.reader_bind.schema = multi_file_bind.columns;
     
     multi_file_bind.file_list = std::move(ds_file_list);
     multi_file_bind.multi_file_reader = make_uniq<DeltaShareMultiFileReader>();
@@ -449,21 +446,15 @@ static unique_ptr<FunctionData> ReadDeltaShareCdfBind(
     // Do NOT pass modified return_types/names yet to prevent Parquet scanner column mismatch
     auto bind_data = read_parquet.bind(context, inner_input, return_types, names);
 
-    std::unordered_map<string, string> physical_to_logical;
-    for (const auto& pair : ds_file_list->column_mapping) {
-        physical_to_logical[pair.second] = pair.first;
-    }
-
-    if (!physical_to_logical.empty()) {
-        for (auto& name : names) {
-            auto it = physical_to_logical.find(name);
-            if (it != physical_to_logical.end()) {
-                name = it->second;
-            }
-        }
-    }
+    // Overwrite the returned schema with the LOGICAL schema from Delta Share!
+    return_types.clear();
+    names.clear();
+    DeltaSharingClient::ParseSparkSchema(ds_file_list->metadata.schema_string, return_types, names);
 
     auto &multi_file_bind = bind_data->Cast<MultiFileBindData>();
+    multi_file_bind.types = return_types;
+    multi_file_bind.names = names;
+    multi_file_bind.columns = MultiFileColumnDefinition::ColumnsFromNamesAndTypes(names, return_types);
     multi_file_bind.file_options.auto_detect_hive_partitioning = false;
     multi_file_bind.file_options.hive_partitioning = false;
     multi_file_bind.file_options.union_by_name = true;
@@ -492,6 +483,8 @@ static unique_ptr<FunctionData> ReadDeltaShareCdfBind(
             multi_file_bind.types.push_back(cdf_types[i]);
         }
     }
+
+    multi_file_bind.reader_bind.schema = multi_file_bind.columns;
 
     multi_file_bind.file_list = std::move(ds_file_list);
 
@@ -579,7 +572,7 @@ static void DeltaShareListFilesFunction(
     ListVector::SetListSize(result, total_size);
 }
 
-static void LoadInternal(DUCK_DELTA_SHARE_EXTENSION_LOAD_PARAM) {
+static void LoadInternal(DUCKDB_DELTA_SHARING_EXTENSION_LOAD_PARAM) {
     auto &instance = DUCKDB_GET_DATABASE_INSTANCE(db);
     auto &config = DBConfig::GetConfig(instance);
 
@@ -693,17 +686,17 @@ static void LoadInternal(DUCK_DELTA_SHARE_EXTENSION_LOAD_PARAM) {
 
 }
 
-void DuckDeltaShareExtension::Load(DUCK_DELTA_SHARE_EXTENSION_LOAD_PARAM) {
+void DuckdbDeltaSharingExtension::Load(DUCKDB_DELTA_SHARING_EXTENSION_LOAD_PARAM) {
     LoadInternal(db);
 }
 
-std::string DuckDeltaShareExtension::Name() {
-    return "duck_delta_share";
+std::string DuckdbDeltaSharingExtension::Name() {
+    return "duckdb_delta_sharing";
 }
 
-std::string DuckDeltaShareExtension::Version() const {
-#ifdef EXT_VERSION_DUCK_DELTA_SHARE
-    return EXT_VERSION_DUCK_DELTA_SHARE;
+std::string DuckdbDeltaSharingExtension::Version() const {
+#ifdef EXT_VERSION_DUCKDB_DELTA_SHARING
+    return EXT_VERSION_DUCKDB_DELTA_SHARING;
 #else
     return "";
 #endif
@@ -713,7 +706,7 @@ std::string DuckDeltaShareExtension::Version() const {
 
 extern "C" {
 
-DUCKDB_CPP_EXTENSION_ENTRY(duck_delta_share, loader) {
+DUCKDB_CPP_EXTENSION_ENTRY(duckdb_delta_sharing, loader) {
     duckdb::LoadInternal(loader);
 }
 }
