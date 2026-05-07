@@ -24,8 +24,8 @@ The most efficient way to query **Delta Lake** tables directly from **DuckDB**. 
 Inside your DuckDB session, run:
 
 ```sql
-INSTALL duck_delta_share;
-LOAD duck_delta_share;
+INSTALL duckdb_delta_sharing;
+LOAD duckdb_delta_sharing;
 -- Required for network access
 INSTALL httpfs;
 LOAD httpfs;

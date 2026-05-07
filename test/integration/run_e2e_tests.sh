@@ -8,7 +8,7 @@ echo "========================================================="
 cd "$(dirname "$0")/../.."
 
 DUCKDB_PATH="./build/release/duckdb"
-EXT_PATH="./build/release/extension/duck_delta_share/duck_delta_share.duckdb_extension"
+EXT_PATH="./build/release/extension/duckdb_delta_sharing/duckdb_delta_sharing.duckdb_extension"
 
 if [ ! -f "$DUCKDB_PATH" ]; then
     echo "DuckDB executable not found. Please compile the extension first using 'make release'."

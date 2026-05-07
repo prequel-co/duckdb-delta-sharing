@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.5)
 
 # Set extension name here
-set(TARGET_NAME duck_delta_share)
+set(TARGET_NAME duckdb_delta_sharing)
 
 # DuckDB's extension distribution supports vcpkg. As such, dependencies can be added in ./vcpkg.json and then
 # used in cmake with find_package. Feel free to remove or replace with other dependencies.
@@ -45,8 +45,8 @@ project(${TARGET_NAME})
 include_directories(src/include)
 
 set(EXTENSION_SOURCES
-    src/duck_delta_share_extension.cpp
-    src/duck_delta_share_functions.cpp
+    src/duckdb_delta_sharing_extension.cpp
+    src/duckdb_delta_sharing_functions.cpp
     src/delta_share_multi_file_reader.cpp
     src/delta_sharing_client.cpp
     src/delta_sharing_json.cpp

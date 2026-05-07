@@ -493,7 +493,7 @@ DeltaSharingClient::QueryTableResult DeltaSharingClient::QueryTable(
 
     std::string post_data = request_body.dump();
     {
-        std::ofstream debug_file("/tmp/duck_delta_share_request.json");
+        std::ofstream debug_file("/tmp/duckdb_delta_sharing_request.json");
         debug_file << post_data;
     }
 

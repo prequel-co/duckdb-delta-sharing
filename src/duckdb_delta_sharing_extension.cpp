@@ -1,7 +1,7 @@
 #define DUCKDB_EXTENSION_MAIN
 
-#include "duck_delta_share_extension.hpp"
-#include "duck_delta_share_functions.hpp"
+#include "duckdb_delta_sharing_extension.hpp"
+#include "duckdb_delta_sharing_functions.hpp"
 #include "duckdb.hpp"
 #include "duckdb/common/exception.hpp"
 #include "duckdb/function/scalar_function.hpp"
@@ -572,7 +572,7 @@ static void DeltaShareListFilesFunction(
     ListVector::SetListSize(result, total_size);
 }
 
-static void LoadInternal(DUCK_DELTA_SHARE_EXTENSION_LOAD_PARAM) {
+static void LoadInternal(DUCKDB_DELTA_SHARING_EXTENSION_LOAD_PARAM) {
     auto &instance = DUCKDB_GET_DATABASE_INSTANCE(db);
     auto &config = DBConfig::GetConfig(instance);
 
@@ -686,17 +686,17 @@ static void LoadInternal(DUCK_DELTA_SHARE_EXTENSION_LOAD_PARAM) {
 
 }
 
-void DuckDeltaShareExtension::Load(DUCK_DELTA_SHARE_EXTENSION_LOAD_PARAM) {
+void DuckdbDeltaSharingExtension::Load(DUCKDB_DELTA_SHARING_EXTENSION_LOAD_PARAM) {
     LoadInternal(db);
 }
 
-std::string DuckDeltaShareExtension::Name() {
-    return "duck_delta_share";
+std::string DuckdbDeltaSharingExtension::Name() {
+    return "duckdb_delta_sharing";
 }
 
-std::string DuckDeltaShareExtension::Version() const {
-#ifdef EXT_VERSION_DUCK_DELTA_SHARE
-    return EXT_VERSION_DUCK_DELTA_SHARE;
+std::string DuckdbDeltaSharingExtension::Version() const {
+#ifdef EXT_VERSION_DUCKDB_DELTA_SHARING
+    return EXT_VERSION_DUCKDB_DELTA_SHARING;
 #else
     return "";
 #endif
@@ -706,7 +706,7 @@ std::string DuckDeltaShareExtension::Version() const {
 
 extern "C" {
 
-DUCKDB_CPP_EXTENSION_ENTRY(duck_delta_share, loader) {
+DUCKDB_CPP_EXTENSION_ENTRY(duckdb_delta_sharing, loader) {
     duckdb::LoadInternal(loader);
 }
 }

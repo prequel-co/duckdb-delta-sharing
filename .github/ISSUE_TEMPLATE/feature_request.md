@@ -1,6 +1,6 @@
 ---
 name: Feature request
-about: Suggest an idea for duck_delta_share
+about: Suggest an idea for duckdb_delta_sharing
 title: ''
 labels: enhancement
 assignees: ''
