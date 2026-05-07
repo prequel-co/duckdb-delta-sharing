@@ -110,7 +110,7 @@ public:
     static std::unordered_map<std::string, std::string> ParseColumnMapping(const std::string &schema_string);
 
     // Parse Spark SQL JSON schema to DuckDB types and names
-    static void ParseSparkSchema(const std::string &schema_string, vector<LogicalType> &return_types, vector<string> &names);
+    static void ParseSparkSchema(const std::string &schema_string, vector<LogicalType> &return_types, vector<string> &names, vector<string> &physical_names);
 
     // List schemas in a share - returns JSON array of items
     JsonValue ListSchemas(const std::string &share_name, int max_results = -1, const std::string &page_token = "");

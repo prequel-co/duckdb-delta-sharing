@@ -766,7 +766,7 @@ JsonValue DeltaSharingClient::PerformPaginatedGet(const std::string &path, int m
     return JsonValue::FromInternal(&all_items);
 }
 
-void DeltaSharingClient::ParseSparkSchema(const std::string &schema_string, vector<LogicalType> &return_types, vector<string> &names) {
+void DeltaSharingClient::ParseSparkSchema(const std::string &schema_string, vector<LogicalType> &return_types, vector<string> &names, vector<string> &physical_names) {
     try {
         if (schema_string.empty()) return;
 
@@ -782,6 +782,10 @@ void DeltaSharingClient::ParseSparkSchema(const std::string &schema_string, vect
             }
 
             string name = field.at("name").get<string>();
+            string physical_name = name;
+            if (field.contains("metadata") && field.at("metadata").contains("delta.columnMapping.physicalName")) {
+                physical_name = field.at("metadata").at("delta.columnMapping.physicalName").get<string>();
+            }
             json type_json = field.at("type");
             string type = "";
             if (type_json.is_string()) {
@@ -793,6 +797,7 @@ void DeltaSharingClient::ParseSparkSchema(const std::string &schema_string, vect
             }
 
             names.push_back(name);
+            physical_names.push_back(physical_name);
             if (type == "string") {
                 return_types.push_back(LogicalType::VARCHAR);
             } else if (type == "integer") {
