@@ -39,6 +39,29 @@ echo ""
 echo "Running E2E tests against remote table: ${SHARE}.${SCHEMA}.orders (EXPECTED TO HAVE DELETION VECTORS)..."
 echo "---------------------------------------------------------"
 
+QUERY_ORDERS_DESC="
+LOAD '${EXT_PATH}';
+LOAD httpfs;
+SET delta_sharing_endpoint='${DB_ENDPOINT}';
+SET delta_sharing_bearer_token='${DB_TOKEN}';
+
+DESCRIBE SELECT * FROM delta_share_read('${SHARE}', '${SCHEMA}', 'orders');
+"
+
+echo "Describing orders table to verify schema mapping..."
+ORDERS_DESC=$($DUCKDB_PATH -unsigned -c "$QUERY_ORDERS_DESC")
+echo "$ORDERS_DESC"
+
+if echo "$ORDERS_DESC" | grep -q "col-"; then
+    echo "ERROR: Found physical column names in logical schema! Column mapping failed."
+    exit 1
+fi
+
+if ! echo "$ORDERS_DESC" | grep -q "order_payment_method"; then
+    echo "ERROR: Missing added logical column 'order_payment_method'! Column mapping failed."
+    exit 1
+fi
+
 QUERY_ORDERS="
 LOAD '${EXT_PATH}';
 LOAD httpfs;
