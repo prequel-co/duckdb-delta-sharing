@@ -81,3 +81,9 @@ jobs:
             --package=${{ env.GAR_PACKAGE }} \
             --version=${{ github.event.release.tag_name }} \
             --source=duck_delta_share_extensions.tar.gz
+
+      - name: Upload to GitHub Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: duck_delta_share_extensions.tar.gz

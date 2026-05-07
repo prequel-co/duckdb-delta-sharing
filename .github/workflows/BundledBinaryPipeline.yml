@@ -288,3 +288,9 @@ jobs:
               --version=${{ github.event.release.tag_name }} \
               --source="$file"
           done
+
+      - name: Upload to GitHub Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: compressed-artifacts/*.tar.gz
