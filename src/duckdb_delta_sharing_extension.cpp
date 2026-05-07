@@ -253,7 +253,8 @@ static unique_ptr<FunctionData> ReadDeltaShareBind(
     auto query_result = client.QueryTable(share_name, schema_name, table_name, predicate_hints, -1, -1, timestamp_str);
 
     if (query_result.files.empty()) {
-        DeltaSharingClient::ParseSparkSchema(query_result.metadata.schema_string, return_types, names);
+    vector<string> physical_names;
+    DeltaSharingClient::ParseSparkSchema(query_result.metadata.schema_string, return_types, names, physical_names);
         // Still handle partition columns
         auto* partition_cols_json = static_cast<json*>(query_result.metadata.partition_columns.GetInternalPtr());
         for (const auto& col_json : *partition_cols_json) {
@@ -267,7 +268,12 @@ static unique_ptr<FunctionData> ReadDeltaShareBind(
         auto bind_data = make_uniq<MultiFileBindData>();
         bind_data->types = return_types;
         bind_data->names = names;
-        bind_data->columns = MultiFileColumnDefinition::ColumnsFromNamesAndTypes(names, return_types);
+        bind_data->columns.clear();
+        for (size_t i = 0; i < names.size(); i++) {
+            string phys_name = (i < physical_names.size() && !physical_names[i].empty()) ? physical_names[i] : names[i];
+            MultiFileColumnDefinition col_def(phys_name, return_types[i]);
+            bind_data->columns.push_back(col_def);
+        }
         bind_data->reader_bind.schema = bind_data->columns;
         bind_data->file_list = std::move(ds_file_list);
         bind_data->multi_file_reader = make_uniq<DeltaShareMultiFileReader>();
@@ -298,12 +304,18 @@ static unique_ptr<FunctionData> ReadDeltaShareBind(
     // Overwrite the returned schema with the LOGICAL schema from Delta Share!
     return_types.clear();
     names.clear();
-    DeltaSharingClient::ParseSparkSchema(ds_file_list->metadata.schema_string, return_types, names);
+    vector<string> physical_names;
+    DeltaSharingClient::ParseSparkSchema(ds_file_list->metadata.schema_string, return_types, names, physical_names);
 
     auto &multi_file_bind = bind_data->Cast<MultiFileBindData>();
     multi_file_bind.types = return_types;
     multi_file_bind.names = names;
-    multi_file_bind.columns = MultiFileColumnDefinition::ColumnsFromNamesAndTypes(names, return_types);
+    multi_file_bind.columns.clear();
+    for (size_t i = 0; i < names.size(); i++) {
+        string phys_name = (i < physical_names.size() && !physical_names[i].empty()) ? physical_names[i] : names[i];
+        MultiFileColumnDefinition col_def(phys_name, return_types[i]);
+        multi_file_bind.columns.push_back(col_def);
+    }
 
     // 5. Populate our MultiFileList so that the MultiFileReader has access to DeletionVectors and partition metadata!
     
@@ -383,7 +395,8 @@ static unique_ptr<FunctionData> ReadDeltaShareCdfBind(
     auto query_result = client.QueryTableChanges(share_name, schema_name, table_name, starting_version, ending_version, starting_timestamp, ending_timestamp);
 
     if (query_result.files.empty()) {
-        DeltaSharingClient::ParseSparkSchema(query_result.metadata.schema_string, return_types, names);
+        vector<string> physical_names;
+        DeltaSharingClient::ParseSparkSchema(query_result.metadata.schema_string, return_types, names, physical_names);
         
         auto* partition_cols_json = static_cast<json*>(query_result.metadata.partition_columns.GetInternalPtr());
         for (const auto& col_json : *partition_cols_json) {
@@ -407,7 +420,12 @@ static unique_ptr<FunctionData> ReadDeltaShareCdfBind(
         auto bind_data = make_uniq<MultiFileBindData>();
         bind_data->types = return_types;
         bind_data->names = names;
-        bind_data->columns = MultiFileColumnDefinition::ColumnsFromNamesAndTypes(names, return_types);
+        bind_data->columns.clear();
+        for (size_t i = 0; i < names.size(); i++) {
+            string phys_name = (i < physical_names.size() && !physical_names[i].empty()) ? physical_names[i] : names[i];
+            MultiFileColumnDefinition col_def(phys_name, return_types[i]);
+            bind_data->columns.push_back(col_def);
+        }
         bind_data->reader_bind.schema = bind_data->columns;
         bind_data->file_list = std::move(ds_file_list);
         bind_data->multi_file_reader = make_uniq<DeltaShareMultiFileReader>();
@@ -449,12 +467,18 @@ static unique_ptr<FunctionData> ReadDeltaShareCdfBind(
     // Overwrite the returned schema with the LOGICAL schema from Delta Share!
     return_types.clear();
     names.clear();
-    DeltaSharingClient::ParseSparkSchema(ds_file_list->metadata.schema_string, return_types, names);
+    vector<string> physical_names;
+    DeltaSharingClient::ParseSparkSchema(ds_file_list->metadata.schema_string, return_types, names, physical_names);
 
     auto &multi_file_bind = bind_data->Cast<MultiFileBindData>();
     multi_file_bind.types = return_types;
     multi_file_bind.names = names;
-    multi_file_bind.columns = MultiFileColumnDefinition::ColumnsFromNamesAndTypes(names, return_types);
+    multi_file_bind.columns.clear();
+    for (size_t i = 0; i < names.size(); i++) {
+        string phys_name = (i < physical_names.size() && !physical_names[i].empty()) ? physical_names[i] : names[i];
+        MultiFileColumnDefinition col_def(phys_name, return_types[i]);
+        multi_file_bind.columns.push_back(col_def);
+    }
     multi_file_bind.file_options.auto_detect_hive_partitioning = false;
     multi_file_bind.file_options.hive_partitioning = false;
     multi_file_bind.file_options.union_by_name = true;
