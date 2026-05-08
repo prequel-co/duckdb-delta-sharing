@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.5)
 
 # Set extension name here
 set(TARGET_NAME duckdb_delta_sharing)
+project(${TARGET_NAME})
 
 if("$ENV{DUCKDB_PLATFORM}" STREQUAL "windows_amd64")
     set(CMAKE_C_COMPILER "cl")
@@ -46,7 +47,6 @@ endif()
 set(EXTENSION_NAME ${TARGET_NAME}_extension)
 set(LOADABLE_EXTENSION_NAME ${TARGET_NAME}_loadable_extension)
 
-project(${TARGET_NAME})
 include_directories(src/include)
 
 set(EXTENSION_SOURCES
