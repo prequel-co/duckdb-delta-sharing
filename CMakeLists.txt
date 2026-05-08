@@ -4,11 +4,9 @@ cmake_minimum_required(VERSION 3.5)
 set(TARGET_NAME duckdb_delta_sharing)
 
 if("$ENV{DUCKDB_PLATFORM}" STREQUAL "windows_amd64")
-    # Force MSVC and disable ccache which fails to resolve cl.exe on GitHub Actions
-    set(CMAKE_C_COMPILER "cl" CACHE STRING "" FORCE)
-    set(CMAKE_CXX_COMPILER "cl" CACHE STRING "" FORCE)
-    set(CMAKE_C_COMPILER_LAUNCHER "" CACHE STRING "" FORCE)
-    set(CMAKE_CXX_COMPILER_LAUNCHER "" CACHE STRING "" FORCE)
+    # DuckDB's CI tools sometimes configure windows_amd64 with the MSVC vcpkg triplet
+    # but the environment actually uses MinGW GCC. Force the MinGW triplet to match the compiler.
+    set(VCPKG_TARGET_TRIPLET "x64-mingw-static" CACHE STRING "Override vcpkg triplet" FORCE)
 endif()
 
 project(${TARGET_NAME})
