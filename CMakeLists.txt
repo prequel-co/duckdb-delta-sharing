@@ -2,12 +2,14 @@ cmake_minimum_required(VERSION 3.5)
 
 # Set extension name here
 set(TARGET_NAME duckdb_delta_sharing)
-project(${TARGET_NAME})
 
 if("$ENV{DUCKDB_PLATFORM}" STREQUAL "windows_amd64")
-    set(CMAKE_C_COMPILER "cl")
-    set(CMAKE_CXX_COMPILER "cl")
+    # DuckDB's CI tools sometimes configure windows_amd64 with the MSVC vcpkg triplet
+    # but the environment actually uses MinGW GCC. Force the MinGW triplet to match the compiler.
+    set(VCPKG_TARGET_TRIPLET "x64-mingw-static" CACHE STRING "Override vcpkg triplet" FORCE)
 endif()
+
+project(${TARGET_NAME})
 
 # DuckDB's extension distribution supports vcpkg. As such, dependencies can be added in ./vcpkg.json and then
 # used in cmake with find_package. Feel free to remove or replace with other dependencies.
