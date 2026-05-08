@@ -36,7 +36,7 @@ jobs:
             target: release
             skip_pr: false
           - os: windows-latest
-            arch: windows_amd64
+            arch: windows_amd64_mingw
             target: release
             skip_pr: true
 
