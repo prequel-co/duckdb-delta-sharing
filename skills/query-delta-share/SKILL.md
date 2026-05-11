@@ -18,8 +18,8 @@ Follow these steps in order when assisting users.
 DuckDB requires credentials or connection strings to contact a Delta Sharing Server.
 Before executing queries, ensure the appropriate credentials are known, either via OS environment variables or DuckDB session settings.
 
-- Environment Variables: `DELTA_SHARING_ENDPOINT` and `DELTA_SHARING_BEARER_TOKEN`
-- DuckDB Settings: `SET delta_sharing_endpoint = '<url>'; SET delta_sharing_bearer_token = '<token>'`
+- DuckDB Config: `CREATE SECRET (TYPE delta_sharing, PROVIDER config, ENDPOINT '<url>', BEARER_TOKEN '<token>');`
+- Environment Variables: Set `DELTA_SHARING_ENDPOINT` and `DELTA_SHARING_BEARER_TOKEN`, then run `CREATE SECRET (TYPE delta_sharing, PROVIDER env);`
 
 If they are missing and you encounter connection errors, politely ask the user to provide them or ensure they are loaded into your environment.
 

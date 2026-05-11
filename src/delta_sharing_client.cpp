@@ -3,6 +3,8 @@
 #include "duckdb/common/exception/http_exception.hpp"
 #include "duckdb/common/file_system.hpp"
 #include <nlohmann/json.hpp>
+#include "duckdb/main/secret/secret.hpp"
+#include "duckdb/main/secret/secret_manager.hpp"
 #include <curl/curl.h>
 #include <sstream>
 #include <fstream>
@@ -63,21 +65,46 @@ static std::string GetNextPageLink(const std::map<std::string, std::string>& hea
 DeltaSharingProfile DeltaSharingProfile::FromConfig(ClientContext &context) {
     DeltaSharingProfile profile;
 
-    // Get endpoint from DuckDB configuration
-    Value endpoint_value;
-    if (!context.TryGetCurrentSetting("delta_sharing_endpoint", endpoint_value) ||
-        endpoint_value.IsNull() || endpoint_value.ToString().empty()) {
-        throw InvalidConfigurationException("LoadProfile error: Please initialize by running SET delta_sharing_endpoint='your_endpoint'");
+    auto &sm = SecretManager::Get(context);
+    auto trans = CatalogTransaction::GetSystemCatalogTransaction(context);
+    auto secrets = sm.AllSecrets(trans);
+    const KeyValueSecret *ds_secret = nullptr;
+    for (auto &sec : secrets) {
+        if (sec.secret->GetType() == "delta_sharing") {
+            ds_secret = dynamic_cast<const KeyValueSecret*>(sec.secret.get());
+            break;
+        }
     }
-    profile.endpoint = endpoint_value.ToString();
 
-    // Get bearer token from DuckDB configuration
-    Value token_value;
-    if (!context.TryGetCurrentSetting("delta_sharing_bearer_token", token_value) ||
-        token_value.IsNull() || token_value.ToString().empty()) {
-        throw InvalidConfigurationException("LoadProfile error: Please initialize by running SET delta_sharing_bearer_token='your_token'");
+    if (!ds_secret) {
+        throw InvalidConfigurationException("LoadProfile error: Please configure Delta Sharing via a secret: CREATE SECRET (TYPE delta_sharing, PROVIDER config, ENDPOINT '...', BEARER_TOKEN '...') or CREATE SECRET (TYPE delta_sharing, PROVIDER env)");
     }
-    profile.bearer_token = token_value.ToString();
+    
+    Value endpoint_value;
+    bool has_endpoint = false;
+    try {
+        endpoint_value = ds_secret->TryGetValue("endpoint", false);
+        has_endpoint = !endpoint_value.IsNull() && !endpoint_value.ToString().empty();
+    } catch (...) {}
+
+    if (has_endpoint) {
+        profile.endpoint = endpoint_value.ToString();
+    } else {
+        throw InvalidConfigurationException("LoadProfile error: Please configure Delta Sharing via a secret: CREATE SECRET (TYPE delta_sharing, PROVIDER config, ENDPOINT '...', BEARER_TOKEN '...') or CREATE SECRET (TYPE delta_sharing, PROVIDER env)");
+    }
+
+    Value token_value;
+    bool has_token = false;
+    try {
+        token_value = ds_secret->TryGetValue("bearer_token", false);
+        has_token = !token_value.IsNull() && !token_value.ToString().empty();
+    } catch (...) {}
+
+    if (has_token) {
+        profile.bearer_token = token_value.ToString();
+    } else {
+        throw InvalidConfigurationException("LoadProfile error: Please configure Delta Sharing via a secret: CREATE SECRET (TYPE delta_sharing, PROVIDER config, ENDPOINT '...', BEARER_TOKEN '...') or CREATE SECRET (TYPE delta_sharing, PROVIDER env)");
+    }
 
     // Get optional fields
     profile.share_credentials_version = 1;
