@@ -33,11 +33,20 @@ LOAD httpfs;
 
 ### 2. Basic Configuration
 
-Set your sharing endpoint and bearer token:
+Set your sharing endpoint and bearer token using DuckDB Secrets:
 
 ```sql
-SET delta_sharing_endpoint = 'https://your-delta-sharing-server.com/api/2.0/delta-sharing';
-SET delta_sharing_bearer_token = 'your_private_token';
+CREATE SECRET (
+    TYPE delta_sharing,
+    PROVIDER config,
+    ENDPOINT 'https://your-delta-sharing-server.com/api/2.0/delta-sharing',
+    BEARER_TOKEN 'your_private_token'
+);
+```
+
+Alternatively, if you have `DELTA_SHARING_ENDPOINT` and `DELTA_SHARING_BEARER_TOKEN` set in your environment:
+```sql
+CREATE SECRET (TYPE delta_sharing, PROVIDER env);
 ```
 
 ---
@@ -110,10 +119,10 @@ FROM delta_share_change_data_feed('my_share', 'my_schema', 'my_table', '2024-04-
 
 ## ⚙️ Configuration Options
 
-| Setting | Type | Description | Default |
+| Setting / Secret Key | Type | Description | Default |
 |:---|:---|:---|:---|
-| `delta_sharing_endpoint` | `VARCHAR` | Base URL of the Delta Sharing server | |
-| `delta_sharing_bearer_token` | `VARCHAR` | Secret JWT token for authentication | |
+| `ENDPOINT` | `VARCHAR` | Base URL of the Delta Sharing server (Secret key) | |
+| `BEARER_TOKEN` | `VARCHAR` | Secret JWT token for authentication (Secret key) | |
 | `delta_sharing_query_telemetry_disabled` | `BOOLEAN` | Whether to hide your SQL from the server | `false` |
 
 ### 📊 Query Telemetry

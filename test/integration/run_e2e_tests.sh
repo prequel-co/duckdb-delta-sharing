@@ -31,6 +31,7 @@ if [ -z "$DB_TOKEN" ]; then
     echo "DELTA_SHARING_BEARER_TOKEN not found in environment or .env file"
     exit 1
 fi
+
 SHARE="prequel_dev_share"
 SCHEMA="prequel_dev"
 TABLE="customers"
@@ -42,8 +43,7 @@ echo "---------------------------------------------------------"
 QUERY_ORDERS_DESC="
 LOAD '${EXT_PATH}';
 LOAD httpfs;
-SET delta_sharing_endpoint='${DB_ENDPOINT}';
-SET delta_sharing_bearer_token='${DB_TOKEN}';
+CREATE SECRET (TYPE delta_sharing, PROVIDER config, ENDPOINT '${DB_ENDPOINT}', BEARER_TOKEN '${DB_TOKEN}');
 
 DESCRIBE SELECT * FROM delta_share_read('${SHARE}', '${SCHEMA}', 'orders');
 "
@@ -65,8 +65,7 @@ fi
 QUERY_ORDERS="
 LOAD '${EXT_PATH}';
 LOAD httpfs;
-SET delta_sharing_endpoint='${DB_ENDPOINT}';
-SET delta_sharing_bearer_token='${DB_TOKEN}';
+CREATE SECRET (TYPE delta_sharing, PROVIDER config, ENDPOINT '${DB_ENDPOINT}', BEARER_TOKEN '${DB_TOKEN}');
 
 SELECT * FROM delta_share_read('${SHARE}', '${SCHEMA}', 'orders');
 "
@@ -79,8 +78,7 @@ echo "---------------------------------------------------------"
 QUERY_TIME_TRAVEL="
 LOAD '${EXT_PATH}';
 LOAD httpfs;
-SET delta_sharing_endpoint='${DB_ENDPOINT}';
-SET delta_sharing_bearer_token='${DB_TOKEN}';
+CREATE SECRET (TYPE delta_sharing, PROVIDER config, ENDPOINT '${DB_ENDPOINT}', BEARER_TOKEN '${DB_TOKEN}');
 
 SELECT count(*) as row_count FROM delta_share_read('${SHARE}', '${SCHEMA}', 'orders', timestamp '2026-04-08 18:57:48');
 "
@@ -93,8 +91,7 @@ echo "---------------------------------------------------------"
 QUERY_EMPTY="
 LOAD '${EXT_PATH}';
 LOAD httpfs;
-SET delta_sharing_endpoint='${DB_ENDPOINT}';
-SET delta_sharing_bearer_token='${DB_TOKEN}';
+CREATE SECRET (TYPE delta_sharing, PROVIDER config, ENDPOINT '${DB_ENDPOINT}', BEARER_TOKEN '${DB_TOKEN}');
 
 SELECT count(*) as row_count FROM delta_share_read('${SHARE}', '${SCHEMA}', 'orders', timestamp '2026-04-08 18:57:40');
 "
@@ -107,8 +104,7 @@ echo "---------------------------------------------------------"
 QUERY_CDF="
 LOAD '${EXT_PATH}';
 LOAD httpfs;
-SET delta_sharing_endpoint='${DB_ENDPOINT}';
-SET delta_sharing_bearer_token='${DB_TOKEN}';
+CREATE SECRET (TYPE delta_sharing, PROVIDER config, ENDPOINT '${DB_ENDPOINT}', BEARER_TOKEN '${DB_TOKEN}');
 
 SELECT * FROM delta_share_change_data_feed('${SHARE}', '${SCHEMA}', 'orders', 0) LIMIT 10;
 "
@@ -117,8 +113,7 @@ $DUCKDB_PATH -unsigned -c "$QUERY_CDF"
 QUERY_CDF_COUNT="
 LOAD '${EXT_PATH}';
 LOAD httpfs;
-SET delta_sharing_endpoint='${DB_ENDPOINT}';
-SET delta_sharing_bearer_token='${DB_TOKEN}';
+CREATE SECRET (TYPE delta_sharing, PROVIDER config, ENDPOINT '${DB_ENDPOINT}', BEARER_TOKEN '${DB_TOKEN}');
 
 SELECT count(*) FROM delta_share_change_data_feed('${SHARE}', '${SCHEMA}', 'orders', 0);
 "

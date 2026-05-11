@@ -14,6 +14,7 @@
 #ifndef DUCKDB_CPP_EXTENSION_ENTRY
 #include "duckdb/main/extension_util.hpp"
 #endif
+#include "duckdb/main/secret/secret_manager.hpp"
 #include "duckdb/planner/expression/bound_function_expression.hpp"
 #include <nlohmann/json.hpp>
 #include <unordered_set>
@@ -596,6 +597,50 @@ static void DeltaShareListFilesFunction(
     ListVector::SetListSize(result, total_size);
 }
 
+static unique_ptr<BaseSecret> CreateDeltaSharingSecretFromConfig(ClientContext &context, CreateSecretInput &input) {
+    auto scope = input.scope;
+    auto result = make_uniq<KeyValueSecret>(scope, input.type, input.provider, input.name);
+    
+    // endpoint is required
+    if (input.options.find("endpoint") != input.options.end()) {
+        result->secret_map["endpoint"] = input.options["endpoint"];
+    } else {
+        throw InvalidInputException("Delta Sharing secret requires 'endpoint' parameter");
+    }
+    
+    // bearer_token is required
+    if (input.options.find("bearer_token") != input.options.end()) {
+        result->secret_map["bearer_token"] = input.options["bearer_token"];
+    } else {
+        throw InvalidInputException("Delta Sharing secret requires 'bearer_token' parameter");
+    }
+
+    result->redact_keys.insert("bearer_token");
+    return std::move(result);
+}
+
+static unique_ptr<BaseSecret> CreateDeltaSharingSecretFromEnv(ClientContext &context, CreateSecretInput &input) {
+    auto scope = input.scope;
+    auto result = make_uniq<KeyValueSecret>(scope, input.type, input.provider, input.name);
+    
+    const char* env_ep = std::getenv("DELTA_SHARING_ENDPOINT");
+    if (env_ep) {
+        result->secret_map["endpoint"] = string(env_ep);
+    } else {
+        throw InvalidInputException("DELTA_SHARING_ENDPOINT environment variable is not set");
+    }
+    
+    const char* env_token = std::getenv("DELTA_SHARING_BEARER_TOKEN");
+    if (env_token) {
+        result->secret_map["bearer_token"] = string(env_token);
+    } else {
+        throw InvalidInputException("DELTA_SHARING_BEARER_TOKEN environment variable is not set");
+    }
+
+    result->redact_keys.insert("bearer_token");
+    return std::move(result);
+}
+
 static void LoadInternal(DUCKDB_DELTA_SHARING_EXTENSION_LOAD_PARAM) {
     auto &instance = DUCKDB_GET_DATABASE_INSTANCE(db);
     auto &config = DBConfig::GetConfig(instance);
@@ -615,17 +660,24 @@ static void LoadInternal(DUCKDB_DELTA_SHARING_EXTENSION_LOAD_PARAM) {
 	}
 
     // Delta Sharing config
-    const char* env_ep = std::getenv("DELTA_SHARING_ENDPOINT");
-    const char* env_token = std::getenv("DELTA_SHARING_BEARER_TOKEN");
-    config.AddExtensionOption("delta_sharing_endpoint", "URL of delta sharing server", 
-        LogicalType::VARCHAR, 
-        env_ep? std::string(env_ep) : "");
-    config.AddExtensionOption("delta_sharing_bearer_token", "JWT Bearer token issued from server", 
-        LogicalType::VARCHAR, 
-        env_token? std::string(env_token) : "");
     config.AddExtensionOption("delta_sharing_query_telemetry_disabled", "Disable sending full SQL query to server for telemetry", 
         LogicalType::BOOLEAN, 
         Value::BOOLEAN(false));
+
+    // Delta Sharing Secrets Registration
+    SecretType secret_type;
+    secret_type.name = "delta_sharing";
+    secret_type.deserializer = KeyValueSecret::Deserialize<KeyValueSecret>;
+    secret_type.default_provider = "config";
+    SecretManager::Get(instance).RegisterSecretType(secret_type);
+    
+    CreateSecretFunction ds_config_fun = {"delta_sharing", "config", CreateDeltaSharingSecretFromConfig};
+    ds_config_fun.named_parameters["endpoint"] = LogicalType::VARCHAR;
+    ds_config_fun.named_parameters["bearer_token"] = LogicalType::VARCHAR;
+    SecretManager::Get(instance).RegisterSecretFunction(ds_config_fun, OnCreateConflict::REPLACE_ON_CONFLICT);
+
+    CreateSecretFunction ds_env_fun = {"delta_sharing", "env", CreateDeltaSharingSecretFromEnv};
+    SecretManager::Get(instance).RegisterSecretFunction(ds_env_fun, OnCreateConflict::REPLACE_ON_CONFLICT);
 
     // Delta Sharing Functions
     TableFunction list("delta_share_list", {}, ListFunction, ListBind);

@@ -34,8 +34,7 @@ echo "---------------------------------------------------------"
 
 # Note: No LOAD commands used here. Extensions should be pre-registered.
 QUERY_ORDERS="
-SET delta_sharing_endpoint='${DB_ENDPOINT}';
-SET delta_sharing_bearer_token='${DB_TOKEN}';
+CREATE SECRET (TYPE delta_sharing, PROVIDER config, ENDPOINT '${DB_ENDPOINT}', BEARER_TOKEN '${DB_TOKEN}');
 
 SELECT * FROM delta_share_read('${SHARE}', '${SCHEMA}', 'orders') LIMIT 5;
 "
@@ -46,8 +45,7 @@ echo "Testing Time Travel with delta_share_read (Bundled)..."
 echo "---------------------------------------------------------"
 
 QUERY_TIME_TRAVEL="
-SET delta_sharing_endpoint='${DB_ENDPOINT}';
-SET delta_sharing_bearer_token='${DB_TOKEN}';
+CREATE SECRET (TYPE delta_sharing, PROVIDER config, ENDPOINT '${DB_ENDPOINT}', BEARER_TOKEN '${DB_TOKEN}');
 
 SELECT count(*) as row_count FROM delta_share_read('${SHARE}', '${SCHEMA}', 'orders', timestamp '2026-04-08 18:57:48');
 "
@@ -58,8 +56,7 @@ echo "Testing Change Data Feed (CDF) (Bundled)..."
 echo "---------------------------------------------------------"
 
 QUERY_CDF="
-SET delta_sharing_endpoint='${DB_ENDPOINT}';
-SET delta_sharing_bearer_token='${DB_TOKEN}';
+CREATE SECRET (TYPE delta_sharing, PROVIDER config, ENDPOINT '${DB_ENDPOINT}', BEARER_TOKEN '${DB_TOKEN}');
 
 SELECT * FROM delta_share_change_data_feed('${SHARE}', '${SCHEMA}', 'orders', 0) LIMIT 10;
 "
