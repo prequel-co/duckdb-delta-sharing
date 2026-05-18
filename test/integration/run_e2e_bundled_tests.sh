@@ -41,6 +41,28 @@ SELECT * FROM delta_share_read('${SHARE}', '${SCHEMA}', 'orders') LIMIT 5;
 $DUCKDB_PATH -unsigned -c "$QUERY_ORDERS"
 
 echo ""
+echo "Running E2E tests against remote table events using BUNDLED EXTENSIONS..."
+echo "---------------------------------------------------------"
+
+QUERY_EVENTS="
+CREATE SECRET (TYPE delta_sharing, PROVIDER config, ENDPOINT '${DB_ENDPOINT}', BEARER_TOKEN '${DB_TOKEN}');
+
+SELECT * FROM delta_share_read('${SHARE}', '${SCHEMA}', 'events') LIMIT 5;
+"
+$DUCKDB_PATH -unsigned -c "$QUERY_EVENTS"
+
+echo ""
+echo "Running E2E tests against remote table master_import_table using BUNDLED EXTENSIONS..."
+echo "---------------------------------------------------------"
+
+QUERY_MASTER_TABLE="
+CREATE SECRET (TYPE delta_sharing, PROVIDER config, ENDPOINT '${DB_ENDPOINT}', BEARER_TOKEN '${DB_TOKEN}');
+
+SELECT * FROM delta_share_read('${SHARE}', '${SCHEMA}', 'master_import_table') LIMIT 5;
+"
+$DUCKDB_PATH -unsigned -c "$QUERY_MASTER_TABLE"
+
+echo ""
 echo "Testing Time Travel with delta_share_read (Bundled)..."
 echo "---------------------------------------------------------"
 
