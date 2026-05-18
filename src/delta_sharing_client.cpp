@@ -72,7 +72,6 @@ DeltaSharingProfile DeltaSharingProfile::FromConfig(ClientContext &context) {
     for (auto &sec : secrets) {
         if (sec.secret->GetType() == "delta_sharing") {
             ds_secret = dynamic_cast<const KeyValueSecret*>(sec.secret.get());
-            break;
         }
     }
 
@@ -238,6 +237,10 @@ HttpResponse DeltaSharingClient::PerformRequest(
     curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, HeaderCallback);
     curl_easy_setopt(curl, CURLOPT_HEADERDATA, &response.headers);
 
+    char errbuf[CURL_ERROR_SIZE];
+    errbuf[0] = 0;
+    curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, errbuf);
+
     // Perform request
     CURLcode res = curl_easy_perform(curl);
 
@@ -248,7 +251,12 @@ HttpResponse DeltaSharingClient::PerformRequest(
     curl_slist_free_all(headers);
 
     if (res != CURLE_OK) {
-        response.error_message = curl_easy_strerror(res);
+        size_t len = strlen(errbuf);
+        if (len) {
+            response.error_message = std::string(curl_easy_strerror(res)) + " - " + std::string(errbuf);
+        } else {
+            response.error_message = curl_easy_strerror(res);
+        }
         response.success = false;
         return response;
     }
