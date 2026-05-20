@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.5)
 
 # Set extension name here
 set(TARGET_NAME duckdb_delta_sharing)
-set(DUCKDB_DELTA_SHARING_EXTENSION_VERSION "0.2.0")
+set(DUCKDB_DELTA_SHARING_EXTENSION_VERSION "0.2.1")
 
 if("$ENV{DUCKDB_PLATFORM}" STREQUAL "windows_amd64")
     # DuckDB's CI tools sometimes configure windows_amd64 with the MSVC vcpkg triplet
