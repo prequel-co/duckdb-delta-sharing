@@ -70,7 +70,7 @@ DeltaSharingProfile DeltaSharingProfile::FromConfig(ClientContext &context) {
     auto secrets = sm.AllSecrets(trans);
     const KeyValueSecret *ds_secret = nullptr;
     for (auto &sec : secrets) {
-        if (sec.secret->GetType() == "delta_sharing") {
+        if (sec.secret && sec.secret->GetType() == "delta_sharing") {
             ds_secret = dynamic_cast<const KeyValueSecret*>(sec.secret.get());
         }
     }

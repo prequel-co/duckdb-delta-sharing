@@ -144,7 +144,7 @@ CREATE SECRET (TYPE delta_sharing, PROVIDER config, ENDPOINT '${DB_ENDPOINT}', B
 SELECT count(*) FROM delta_share_change_data_feed('${SHARE}', '${SCHEMA}', 'orders', 0);
 "
 
-CDF_COUNT=$($DUCKDB_PATH -unsigned -csv -noheader -c "$QUERY_CDF_COUNT" | tr -d '[:space:]')
+CDF_COUNT=$($DUCKDB_PATH -unsigned -csv -noheader -c "$QUERY_CDF_COUNT" | tail -n 1 | tr -d '[:space:]')
 echo "CDF Total Row Count: $CDF_COUNT"
 
 if [[ -z "$CDF_COUNT" || "$CDF_COUNT" -eq 0 ]]; then
