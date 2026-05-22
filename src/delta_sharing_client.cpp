@@ -126,9 +126,12 @@ DeltaSharingProfile DeltaSharingProfile::FromConfig(ClientContext &context) {
         !telemetry_disabled_value.IsNull()) {
         profile.query_telemetry_disabled = telemetry_disabled_value.GetValue<bool>();
     }
-
-    profile.current_query = context.GetCurrentQuery();
-
+    profile.current_query = "";
+    try {
+        profile.current_query = context.GetCurrentQuery();
+    } catch (...) {
+        // active_query may be null during the bind phase
+    }
     // Remove trailing slash from endpoint if present
     if (!profile.endpoint.empty() && profile.endpoint.back() == '/') {
         profile.endpoint.pop_back();

@@ -106,7 +106,7 @@ jobs:
         if: startsWith(matrix.os, 'macos')
         run: |
           if [[ "${{ matrix.arch }}" == "osx_amd64" ]]; then
-            curl -sL http://www.unixodbc.org/unixODBC-2.3.12.tar.gz | tar xz
+            curl -sL https://github.com/lurcher/unixODBC/releases/download/2.3.12/unixODBC-2.3.12.tar.gz | tar xz
             cd unixODBC-2.3.12
             CFLAGS="-arch x86_64 -arch arm64" LDFLAGS="-arch x86_64 -arch arm64" ./configure --prefix=/tmp/unixodbc --disable-gui --disable-drivers
             make -j4
