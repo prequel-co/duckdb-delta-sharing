@@ -123,13 +123,13 @@ FROM delta_share_change_data_feed('my_share', 'my_schema', 'my_table', '2024-04-
 |:---|:---|:---|:---|
 | `ENDPOINT` | `VARCHAR` | Base URL of the Delta Sharing server (Secret key) | |
 | `BEARER_TOKEN` | `VARCHAR` | Secret JWT token for authentication (Secret key) | |
-| `delta_sharing_query_telemetry_disabled` | `BOOLEAN` | Whether to hide your SQL from the server | `false` |
+| `delta_sharing_query_telemetry_enabled` | `BOOLEAN` | Whether to send your SQL to the server for telemetry | `false` |
 
 ### 📊 Query Telemetry
 When enabled (`false` by default), the extension sends a Base64-encoded snippet of your SQL query in the `delta-sharing-query-sql` HTTP header. This allows server administrators to see which queries are being run and optimize data layout accordingly.
 
 > [!WARNING]
-> **Privacy Note**: If you use hard-coded literals (e.g., `WHERE email = 'user@example.com'`) instead of parameters, those literals will be included in the telemetry header. If privacy is a concern, set `delta_sharing_query_telemetry_disabled` to `true`.
+> **Privacy Note**: If you enable telemetry and use hard-coded literals (e.g., `WHERE email = 'user@example.com'`) instead of parameters, those literals will be included in the telemetry header. If privacy is a concern, keep `delta_sharing_query_telemetry_enabled` set to `false`.
 
 ---
 
