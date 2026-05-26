@@ -136,6 +136,7 @@ DeltaSharingProfile DeltaSharingProfile::FromConfig(ClientContext &context) {
             // active_query may be null during the bind phase
         }
     }
+
     // Remove trailing slash from endpoint if present
     if (!profile.endpoint.empty() && profile.endpoint.back() == '/') {
         profile.endpoint.pop_back();
