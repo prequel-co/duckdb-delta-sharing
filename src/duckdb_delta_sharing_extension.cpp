@@ -660,7 +660,7 @@ static void LoadInternal(DUCKDB_DELTA_SHARING_EXTENSION_LOAD_PARAM) {
 	}
 
     // Delta Sharing config
-    config.AddExtensionOption("delta_sharing_query_telemetry_disabled", "Disable sending full SQL query to server for telemetry", 
+    config.AddExtensionOption("delta_sharing_query_telemetry_enabled", "Enable sending full SQL query to server for telemetry", 
         LogicalType::BOOLEAN, 
         Value::BOOLEAN(false));
 

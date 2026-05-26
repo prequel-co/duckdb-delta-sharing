@@ -120,17 +120,21 @@ DeltaSharingProfile DeltaSharingProfile::FromConfig(ClientContext &context) {
         profile.expiration_time = expiration_value.ToString();
     }
 
-    profile.query_telemetry_disabled = false;
-    Value telemetry_disabled_value;
-    if (context.TryGetCurrentSetting("delta_sharing_query_telemetry_disabled", telemetry_disabled_value) &&
-        !telemetry_disabled_value.IsNull()) {
-        profile.query_telemetry_disabled = telemetry_disabled_value.GetValue<bool>();
+    profile.query_telemetry_enabled = false;
+    Value telemetry_enabled_value;
+    if (context.TryGetCurrentSetting("delta_sharing_query_telemetry_enabled", telemetry_enabled_value) &&
+        !telemetry_enabled_value.IsNull()) {
+        profile.query_telemetry_enabled = telemetry_enabled_value.GetValue<bool>();
     }
     profile.current_query = "";
-    try {
-        profile.current_query = context.GetCurrentQuery();
-    } catch (...) {
-        // active_query may be null during the bind phase
+    if (profile.query_telemetry_enabled) {
+        // Note: active_query is null during the Bind phase in database/sql, which throws an InternalException.
+        // Due to C++ ABI boundaries, this exception often cannot be caught. Disable telemetry to bypass this safely.
+        try {
+            profile.current_query = context.GetCurrentQuery();
+        } catch (...) {
+            // active_query may be null during the bind phase
+        }
     }
     // Remove trailing slash from endpoint if present
     if (!profile.endpoint.empty() && profile.endpoint.back() == '/') {
@@ -205,7 +209,7 @@ HttpResponse DeltaSharingClient::PerformRequest(
     headers = curl_slist_append(headers, "Accept: application/x-ndjson,application/json");
     headers = curl_slist_append(headers, "delta-sharing-capabilities: responseformat=delta;readerfeatures=deletionvectors,columnmapping");
 
-    if (!profile_.query_telemetry_disabled && !profile_.current_query.empty()) {
+    if (profile_.query_telemetry_enabled && !profile_.current_query.empty()) {
         std::string query = profile_.current_query;
         if (query.length() > 2048) {
             query = query.substr(0, 2048);
