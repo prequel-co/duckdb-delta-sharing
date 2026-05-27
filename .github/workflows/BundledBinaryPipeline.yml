@@ -239,8 +239,8 @@ jobs:
           chmod +x test/integration/run_e2e_bundled_tests.sh
           ./test/integration/run_e2e_bundled_tests.sh
 
-  upload-bundled-binaries-gar:
-    name: Upload Bundled Binaries to GAR
+  release-bundled-binaries:
+    name: Upload Bundled Binaries to GitHub Release
     needs: [build-binaries, bundle-macos-universal]
     runs-on: ubuntu-latest
     if: always() && needs.build-binaries.result == 'success' && !cancelled()
@@ -251,43 +251,6 @@ jobs:
           pattern: duckdb-compressed-*
           path: compressed-artifacts
           merge-multiple: true
-
-      - name: Authenticate GCP
-        uses: google-github-actions/auth@v3
-        with:
-          credentials_json: ${{ secrets.GCP_ARTIFACT_REGISTRY_SA_JSON }}
-
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v3
-
-      - name: Upload to prql-dev GAR
-        shell: bash
-        run: |
-          for file in compressed-artifacts/*.tar.gz; do
-            echo "Uploading $file to prql-dev..."
-            gcloud artifacts generic upload \
-              --project="prql-dev" \
-              --location="us" \
-              --repository="duckdb" \
-              --package="delta_sharing_bundled" \
-              --version=${{ github.sha }} \
-              --source="$file"
-          done
-
-      - name: Upload to prql-prod GAR
-        if: github.event_name == 'release'
-        shell: bash
-        run: |
-          for file in compressed-artifacts/*.tar.gz; do
-            echo "Uploading $file to prql-prod..."
-            gcloud artifacts generic upload \
-              --project="prql-prod" \
-              --location="us" \
-              --repository="duckdb" \
-              --package="delta_sharing_bundled" \
-              --version=${{ github.event.release.tag_name }} \
-              --source="$file"
-          done
 
       - name: Upload to GitHub Release
         if: github.event_name == 'release'
