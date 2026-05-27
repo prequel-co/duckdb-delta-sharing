@@ -33,15 +33,11 @@ jobs:
   #     extension_name: duckdb_delta_sharing
   #     format_checks: 'format;tidy'
 
-  upload-to-gar:
-    name: Upload Extensions to Google Artifact Registry
+  release-extensions:
+    name: Upload Extensions to GitHub Release
     needs: duckdb-stable-build
     runs-on: ubuntu-latest
     if: success()
-    env:
-      GAR_LOCATION: "us"
-      GAR_REPOSITORY: duckdb
-      GAR_PACKAGE: delta_sharing
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -53,35 +49,6 @@ jobs:
           cd artifacts
           tar -czf ../duckdb_delta_sharing_extensions.tar.gz .
       
-      - name: Authenticate GCP
-        uses: google-github-actions/auth@v3
-        with:
-          credentials_json: ${{ secrets.GCP_ARTIFACT_REGISTRY_SA_JSON }}
-
-      - name: 'Set up Cloud SDK'
-        uses: 'google-github-actions/setup-gcloud@v3'
-
-      - name: Upload to prql-dev
-        run: |
-          gcloud artifacts generic upload \
-            --project="prql-dev" \
-            --location=${{ env.GAR_LOCATION }} \
-            --repository=${{ env.GAR_REPOSITORY }} \
-            --package=${{ env.GAR_PACKAGE }} \
-            --version=${{ github.sha }} \
-            --source=duckdb_delta_sharing_extensions.tar.gz
-
-      - name: Upload to prql-prod (Release)
-        if: github.event_name == 'release'
-        run: |
-          gcloud artifacts generic upload \
-            --project="prql-prod" \
-            --location=${{ env.GAR_LOCATION }} \
-            --repository=${{ env.GAR_REPOSITORY }} \
-            --package=${{ env.GAR_PACKAGE }} \
-            --version=${{ github.event.release.tag_name }} \
-            --source=duckdb_delta_sharing_extensions.tar.gz
-
       - name: Upload to GitHub Release
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
