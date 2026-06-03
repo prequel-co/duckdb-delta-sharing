@@ -85,7 +85,7 @@ SELECT * FROM delta_share_read('${SHARE}', '${SCHEMA}', 'events') LIMIT 5;
 $DUCKDB_PATH -unsigned -c "$QUERY_EVENTS"
 
 echo ""
-echo "Running E2E tests against remote table: ${SHARE}.${SCHEMA}.master_import_table..."
+echo "Running E2E tests against remote table: ${SHARE}.${SCHEMA}.master_table..."
 echo "---------------------------------------------------------"
 
 QUERY_MASTER_TABLE="
@@ -93,7 +93,7 @@ LOAD '${EXT_PATH}';
 LOAD httpfs;
 CREATE SECRET (TYPE delta_sharing, PROVIDER config, ENDPOINT '${DB_ENDPOINT}', BEARER_TOKEN '${DB_TOKEN}');
 
-SELECT * FROM delta_share_read('${SHARE}', '${SCHEMA}', 'master_import_table') LIMIT 5;
+SELECT * FROM delta_share_read('${SHARE}', '${SCHEMA}', 'master_table') LIMIT 5;
 "
 $DUCKDB_PATH -unsigned -c "$QUERY_MASTER_TABLE"
 
