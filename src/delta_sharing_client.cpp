@@ -831,9 +831,13 @@ static LogicalType ParseSparkType(const json &type_json) {
             if (comma != std::string::npos && paren != std::string::npos) {
                 std::string p_str = type.substr(8, comma - 8);
                 std::string s_str = type.substr(comma + 1, paren - comma - 1);
-                int p = std::stoi(p_str);
-                int s = std::stoi(s_str);
-                return LogicalType::DECIMAL(p, s);
+                try {
+                    int p = std::stoi(p_str);
+                    int s = std::stoi(s_str);
+                    return LogicalType::DECIMAL(p, s);
+                } catch (...) {
+                    return LogicalType::VARCHAR;
+                }
             }
         }
         return LogicalType::VARCHAR;
