@@ -894,9 +894,10 @@ void DeltaSharingClient::ParseSparkSchema(const std::string &schema_string, vect
                 physical_name = field.at("metadata").at("delta.columnMapping.physicalName").get<string>();
             }
 
+            LogicalType parsed_type = ParseSparkType(field.at("type"));
             names.push_back(name);
             physical_names.push_back(physical_name);
-            return_types.push_back(ParseSparkType(field.at("type")));
+            return_types.push_back(parsed_type);
         }
     } catch (...) {
         // Fallback: names/types will stay as they were (likely empty)
