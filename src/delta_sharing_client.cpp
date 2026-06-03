@@ -809,6 +809,74 @@ JsonValue DeltaSharingClient::PerformPaginatedGet(const std::string &path, int m
     return JsonValue::FromInternal(&all_items);
 }
 
+static LogicalType ParseSparkType(const json &type_json) {
+    if (type_json.is_string()) {
+        std::string type = type_json.get<std::string>();
+        if (type == "string") return LogicalType::VARCHAR;
+        if (type == "integer") return LogicalType::INTEGER;
+        if (type == "long") return LogicalType::BIGINT;
+        if (type == "double") return LogicalType::DOUBLE;
+        if (type == "float") return LogicalType::FLOAT;
+        if (type == "boolean") return LogicalType::BOOLEAN;
+        if (type == "timestamp") return LogicalType::TIMESTAMP;
+        if (type == "date") return LogicalType::DATE;
+        if (type == "binary") return LogicalType::BLOB;
+        if (type == "byte") return LogicalType::TINYINT;
+        if (type == "short") return LogicalType::SMALLINT;
+        if (type == "variant") return LogicalType::VARIANT();
+        // decimal(p,s)
+        if (type.rfind("decimal(", 0) == 0) {
+            size_t comma = type.find(',');
+            size_t paren = type.find(')');
+            if (comma != std::string::npos && paren != std::string::npos) {
+                std::string p_str = type.substr(8, comma - 8);
+                std::string s_str = type.substr(comma + 1, paren - comma - 1);
+                try {
+                    int p = std::stoi(p_str);
+                    int s = std::stoi(s_str);
+                    return LogicalType::DECIMAL(p, s);
+                } catch (...) {
+                    return LogicalType::VARCHAR;
+                }
+            }
+        }
+        return LogicalType::VARCHAR;
+    } else if (type_json.is_object()) {
+        std::string type = type_json.value("type", "");
+        if (type == "struct") {
+            child_list_t<LogicalType> children;
+            if (type_json.contains("fields") && type_json.at("fields").is_array()) {
+                for (auto &field : type_json.at("fields")) {
+                    std::string name = field.value("name", "");
+                    LogicalType child_type = LogicalType::VARCHAR;
+                    if (field.contains("type")) {
+                        child_type = ParseSparkType(field.at("type"));
+                    }
+                    children.push_back(make_pair(name, child_type));
+                }
+            }
+            return LogicalType::STRUCT(children);
+        } else if (type == "array") {
+            LogicalType child_type = LogicalType::VARCHAR;
+            if (type_json.contains("elementType")) {
+                child_type = ParseSparkType(type_json.at("elementType"));
+            }
+            return LogicalType::LIST(child_type);
+        } else if (type == "map") {
+            LogicalType key_type = LogicalType::VARCHAR;
+            LogicalType value_type = LogicalType::VARCHAR;
+            if (type_json.contains("keyType")) {
+                key_type = ParseSparkType(type_json.at("keyType"));
+            }
+            if (type_json.contains("valueType")) {
+                value_type = ParseSparkType(type_json.at("valueType"));
+            }
+            return LogicalType::MAP(key_type, value_type);
+        }
+    }
+    return LogicalType::VARCHAR;
+}
+
 void DeltaSharingClient::ParseSparkSchema(const std::string &schema_string, vector<LogicalType> &return_types, vector<string> &names, vector<string> &physical_names) {
     try {
         if (schema_string.empty()) return;
@@ -829,43 +897,11 @@ void DeltaSharingClient::ParseSparkSchema(const std::string &schema_string, vect
             if (field.contains("metadata") && field.at("metadata").contains("delta.columnMapping.physicalName")) {
                 physical_name = field.at("metadata").at("delta.columnMapping.physicalName").get<string>();
             }
-            json type_json = field.at("type");
-            string type = "";
-            if (type_json.is_string()) {
-                type = type_json.get<string>();
-            } else {
-                if (type_json.is_object() && type_json.contains("type")) {
-                    type = type_json.at("type").dump();
-                }
-            }
 
+            LogicalType parsed_type = ParseSparkType(field.at("type"));
             names.push_back(name);
             physical_names.push_back(physical_name);
-            if (type == "string") {
-                return_types.push_back(LogicalType::VARCHAR);
-            } else if (type == "integer") {
-                return_types.push_back(LogicalType::INTEGER);
-            } else if (type == "long") {
-                return_types.push_back(LogicalType::BIGINT);
-            } else if (type == "double") {
-                return_types.push_back(LogicalType::DOUBLE);
-            } else if (type == "float") {
-                return_types.push_back(LogicalType::FLOAT);
-            } else if (type == "boolean") {
-                return_types.push_back(LogicalType::BOOLEAN);
-            } else if (type == "timestamp") {
-                return_types.push_back(LogicalType::TIMESTAMP);
-            } else if (type == "date") {
-                return_types.push_back(LogicalType::DATE);
-            } else if (type == "binary") {
-                return_types.push_back(LogicalType::BLOB);
-            } else if (type == "byte") {
-                return_types.push_back(LogicalType::TINYINT);
-            } else if (type == "short") {
-                return_types.push_back(LogicalType::SMALLINT);
-            } else {
-                return_types.push_back(LogicalType::VARCHAR); // Default fallback
-            }
+            return_types.push_back(parsed_type);
         }
     } catch (...) {
         // Fallback: names/types will stay as they were (likely empty)
