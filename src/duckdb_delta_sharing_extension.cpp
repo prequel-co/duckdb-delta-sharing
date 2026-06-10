@@ -58,6 +58,8 @@ using json = nlohmann::json;
 // Section: Function data binds
 // Data binds used by delta_share functions
 
+static unique_ptr<TableFunction> g_read_parquet_function;
+
 static unique_ptr<FunctionData> ListBind(
     ClientContext &context,
     TableFunctionBindInput &input,
@@ -229,9 +231,10 @@ static unique_ptr<FunctionData> ReadDeltaShareBind(
     vector<unique_ptr<Expression>> filters;
 
     // 1. Grab Parquet Scanner TableFunction
-    auto &catalog = Catalog::GetSystemCatalog(context);
-    auto &func_entry = catalog.GetEntry<TableFunctionCatalogEntry>(context, DEFAULT_SCHEMA, "read_parquet");
-    auto read_parquet = func_entry.functions.GetFunctionByArguments(context, {LogicalType::LIST(LogicalType::VARCHAR)});
+    if (!g_read_parquet_function) {
+        throw InternalException("read_parquet table function not initialized");
+    }
+    auto read_parquet = *g_read_parquet_function;
 
     // 2. Fetch URLs dynamically representing the Delta Share logical state
     DeltaSharingProfile profile = DeltaSharingProfile::FromConfig(context);
@@ -451,9 +454,10 @@ static unique_ptr<FunctionData> ReadDeltaShareCdfBind(
     auto ds_file_list = shared_ptr<DeltaShareMultiFileList>(new DeltaShareMultiFileList(std::move(open_file_infos), std::move(query_result.files), std::move(query_result.metadata)));
 
     // Delegate to read_parquet
-    auto &catalog = Catalog::GetSystemCatalog(context);
-    auto &func_entry = catalog.GetEntry<TableFunctionCatalogEntry>(context, DEFAULT_SCHEMA, "read_parquet");
-    auto read_parquet = func_entry.functions.GetFunctionByArguments(context, {LogicalType::LIST(LogicalType::VARCHAR)});
+    if (!g_read_parquet_function) {
+        throw InternalException("read_parquet table function not initialized");
+    }
+    auto read_parquet = *g_read_parquet_function;
 
     read_parquet.get_multi_file_reader = CreateDeltaShareMultiFileReader;
 
@@ -688,6 +692,7 @@ static void LoadInternal(DUCKDB_DELTA_SHARING_EXTENSION_LOAD_PARAM) {
     auto &parquet_scan_entry = DUCKDB_GET_TABLE_FUNCTION(db, con, "read_parquet");
     TableFunction base_read = parquet_scan_entry.functions.functions[0];
     base_parquet_scan_function = base_read.function;
+    g_read_parquet_function = make_uniq<TableFunction>(parquet_scan_entry.functions.GetFunctionByArguments(*con.context, {LogicalType::LIST(LogicalType::VARCHAR)}));
 
     base_read.function = ReadDeltaShareFunctionWrapper;
     base_read.get_multi_file_reader = CreateDeltaShareMultiFileReader;
