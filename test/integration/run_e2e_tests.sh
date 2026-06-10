@@ -152,5 +152,20 @@ if [[ -z "$CDF_COUNT" || "$CDF_COUNT" -eq 0 ]]; then
     exit 1
 fi
 
+echo ""
+echo "Testing Information Schema Deadlock Resolution..."
+echo "---------------------------------------------------------"
+
+QUERY_INFO_SCHEMA="
+LOAD '${EXT_PATH}';
+LOAD httpfs;
+CREATE SECRET (TYPE delta_sharing, PROVIDER config, ENDPOINT '${DB_ENDPOINT}', BEARER_TOKEN '${DB_TOKEN}');
+
+CREATE VIEW my_orders_view AS SELECT * FROM delta_share_read('${SHARE}', '${SCHEMA}', 'orders');
+
+SELECT * FROM information_schema.columns WHERE table_name = 'my_orders_view';
+"
+$DUCKDB_PATH -unsigned -c "$QUERY_INFO_SCHEMA"
+
 echo "---------------------------------------------------------"
 echo "Integration Test completed successfully."
