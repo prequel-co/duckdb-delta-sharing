@@ -818,7 +818,7 @@ static LogicalType ParseSparkType(const json &type_json) {
         if (type == "double") return LogicalType::DOUBLE;
         if (type == "float") return LogicalType::FLOAT;
         if (type == "boolean") return LogicalType::BOOLEAN;
-        if (type == "timestamp") return LogicalType::TIMESTAMP;
+        if (type == "timestamp") return LogicalType::TIMESTAMP_TZ;
         if (type == "timestamp_ntz") return LogicalType::TIMESTAMP;
         if (type == "date") return LogicalType::DATE;
         if (type == "binary") return LogicalType::BLOB;
