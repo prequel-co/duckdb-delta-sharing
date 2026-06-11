@@ -7,7 +7,26 @@ allowed-tools: Bash
 ---
 
 You are helping the user query data using DuckDB through the Delta Sharing protocol.
-Assume the DuckDB CLI being executed inherently contains the `duckdb_delta_sharing` extension already loaded. No local file detection or local directory traversal logic is necessary.
+You must ensure the `duckdb_delta_sharing` extension is installed and loaded before executing queries. There are two ways to do this:
+
+**1. Install from the community repository (Recommended)**
+```sql
+SET allow_community_extensions = true;
+INSTALL duckdb_delta_sharing FROM community;
+LOAD duckdb_delta_sharing;
+SET allow_community_extensions = false;
+```
+
+**2. Load the extension file manually**
+The extension files are downloadable on the GitHub releases.
+This requires allowing unsigned extensions. Launch DuckDB with the `-unsigned` flag:
+```bash
+duckdb -unsigned :memory:
+```
+Then load the local extension file:
+```sql
+LOAD 'path/to/duckdb_delta_sharing.duckdb_extension';
+```
 
 Input: `$@`
 

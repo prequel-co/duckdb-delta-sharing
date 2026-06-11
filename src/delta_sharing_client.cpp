@@ -208,7 +208,7 @@ HttpResponse DeltaSharingClient::PerformRequest(
     headers = curl_slist_append(headers, "Content-Type: application/json");
     headers = curl_slist_append(headers, "User-Agent: delta-sharing-spark/3.1.0");
     headers = curl_slist_append(headers, "Accept: application/x-ndjson,application/json");
-    headers = curl_slist_append(headers, "delta-sharing-capabilities: responseformat=delta;readerfeatures=deletionvectors,columnmapping");
+    headers = curl_slist_append(headers, "delta-sharing-capabilities: responseformat=delta;readerfeatures=deletionvectors,columnmapping,timestampntz");
 
     if (profile_.query_telemetry_enabled && !profile_.current_query.empty()) {
         std::string query = profile_.current_query;
@@ -819,6 +819,7 @@ static LogicalType ParseSparkType(const json &type_json) {
         if (type == "float") return LogicalType::FLOAT;
         if (type == "boolean") return LogicalType::BOOLEAN;
         if (type == "timestamp") return LogicalType::TIMESTAMP;
+        if (type == "timestamp_ntz") return LogicalType::TIMESTAMP;
         if (type == "date") return LogicalType::DATE;
         if (type == "binary") return LogicalType::BLOB;
         if (type == "byte") return LogicalType::TINYINT;
