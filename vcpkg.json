@@ -1,16 +1,22 @@
 {
-        "dependencies": [
-                "openssl",
-                "curl",
-                "nlohmann-json",
-                "roaring"
-        ],
-        "vcpkg-configuration": {
-                "overlay-ports": [
-                        "./extension-ci-tools/vcpkg_ports"
-                ],
-                "overlay-triplets": [
-                        "./extension-ci-tools/toolchains"
-                ]
-        }
+	"dependencies": [
+		{
+			"name": "openssl",
+			"platform": "VCPKG_CMAKE_SYSTEM_NAME != \"Emscripten\""
+		},
+		{
+			"name": "curl",
+			"platform": "VCPKG_CMAKE_SYSTEM_NAME != \"Emscripten\""
+		},
+		"nlohmann-json",
+		"roaring"
+	],
+	"vcpkg-configuration": {
+		"overlay-ports": [
+			"./extension-ci-tools/vcpkg_ports"
+		],
+		"overlay-triplets": [
+			"./extension-ci-tools/toolchains"
+		]
+	}
 }
