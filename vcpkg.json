@@ -2,11 +2,11 @@
 	"dependencies": [
 		{
 			"name": "openssl",
-			"platform": "VCPKG_CMAKE_SYSTEM_NAME != \"Emscripten\""
+			"platform": "!emscripten & !wasm32"
 		},
 		{
 			"name": "curl",
-			"platform": "VCPKG_CMAKE_SYSTEM_NAME != \"Emscripten\""
+			"platform": "!emscripten & !wasm32"
 		},
 		"nlohmann-json",
 		"roaring"
