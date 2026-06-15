@@ -119,6 +119,7 @@ jobs:
           fi
           git clone https://github.com/duckdb/duckdb-odbc.git build/duckdb-odbc
           cd build/duckdb-odbc
+          python3 -c "f='CMakeLists.txt.in'; c=open(f).read(); open(f,'w').write(c.replace('\${JEMALLOC_INCLUDES}', '\${JEMALLOC_INCLUDES}\n  src/duckdb/third_party/jemalloc/include'))"
           python3 vendor.py --duckdb ../../duckdb
           mkdir -p build/release
           cd build/release
