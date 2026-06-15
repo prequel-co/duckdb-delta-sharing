@@ -119,7 +119,7 @@ jobs:
           fi
           git clone https://github.com/duckdb/duckdb-odbc.git build/duckdb-odbc
           cd build/duckdb-odbc
-          python3 -c "f='CMakeLists.txt.in'; c=open(f).read(); open(f,'w').write(c.replace('else()', 'elseif(CMAKE_SYSTEM_NAME STREQUAL \"Linux\")'))"
+          python3 -c "f='CMakeLists.txt.in'; c=open(f).read(); c=c.replace('else()', 'elseif(CMAKE_SYSTEM_NAME STREQUAL \"Linux\")'); c=c.replace('-DNO_FRAMEWORKS', '-DNO_FRAMEWORKS -DSQL_ATTR_ASYNC_DBC_FUNCTIONS_ENABLE=117'); open(f,'w').write(c)"
           python3 vendor.py --duckdb ../../duckdb
           mkdir -p build/release
           cd build/release
