@@ -106,16 +106,16 @@ jobs:
         if: startsWith(matrix.os, 'macos')
         run: |
           if [[ "${{ matrix.arch }}" == "osx_amd64" ]]; then
-            curl -sL https://github.com/lurcher/unixODBC/releases/download/2.3.12/unixODBC-2.3.12.tar.gz | tar xz
-            cd unixODBC-2.3.12
-            CFLAGS="-arch x86_64 -arch arm64" LDFLAGS="-arch x86_64 -arch arm64" ./configure --prefix=/tmp/unixodbc --disable-gui --disable-drivers
+            curl -sL https://github.com/openlink/iODBC/releases/download/v3.52.16/libiodbc-3.52.16.tar.gz | tar xz
+            cd libiodbc-3.52.16
+            CFLAGS="-arch x86_64 -arch arm64" LDFLAGS="-arch x86_64 -arch arm64" ./configure --prefix=/tmp/libiodbc --disable-gui
             make -j4
             make install
             cd ..
-            export CMAKE_PREFIX_PATH="/tmp/unixodbc"
+            export CMAKE_PREFIX_PATH="/tmp/libiodbc"
           else
-            brew install unixodbc || true
-            export CMAKE_PREFIX_PATH="$(brew --prefix unixodbc)"
+            brew install libiodbc || true
+            export CMAKE_PREFIX_PATH="$(brew --prefix libiodbc)"
           fi
           git clone https://github.com/duckdb/duckdb-odbc.git build/duckdb-odbc
           cd build/duckdb-odbc
