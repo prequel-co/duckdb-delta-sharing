@@ -1,0 +1,1966 @@
+diff --git a/src/odbc_api/attribute_api.cpp b/src/odbc_api/attribute_api.cpp
+index 1c887ee0..8d6f3aec 100644
+--- a/src/odbc_api/attribute_api.cpp
++++ b/src/odbc_api/attribute_api.cpp
+@@ -31,6 +31,7 @@ using duckdb::SQLStateType;
+  */
+ SQLRETURN SQL_API SQLGetEnvAttr(SQLHENV environment_handle, SQLINTEGER attribute, SQLPOINTER value_ptr,
+                                 SQLINTEGER buffer_length, SQLINTEGER *string_length_ptr) {
++	try {
+ 
+ 	if (value_ptr == nullptr) {
+ 		return SQL_SUCCESS;
+@@ -56,6 +57,14 @@ SQLRETURN SQL_API SQLGetEnvAttr(SQLHENV environment_handle, SQLINTEGER attribute
+ 		                                   "Optional feature not implemented.", SQLStateType::ST_HYC00, "");
+ 	}
+ 	return SQL_SUCCESS;
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ //===--------------------------------------------------------------------===//
+@@ -80,6 +89,7 @@ static SQLUINTEGER ExtractMajorVersion(SQLPOINTER value_ptr) {
+  */
+ SQLRETURN SQL_API SQLSetEnvAttr(SQLHENV environment_handle, SQLINTEGER attribute, SQLPOINTER value_ptr,
+                                 SQLINTEGER string_length) {
++	try {
+ 	duckdb::OdbcHandleEnv *env = nullptr;
+ 	SQLRETURN ret = ConvertEnvironment(environment_handle, env);
+ 	if (ret != SQL_SUCCESS) {
+@@ -133,6 +143,14 @@ SQLRETURN SQL_API SQLSetEnvAttr(SQLHENV environment_handle, SQLINTEGER attribute
+ 		return duckdb::SetDiagnosticRecord(env, SQL_SUCCESS_WITH_INFO, "SQLSetEnvAttr", "Invalid attribute value",
+ 		                                   SQLStateType::ST_HY024, "");
+ 	}
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ static SQLRETURN WriteStringConnAttr(duckdb::OdbcHandleDbc *dbc, const std::string &str,
+@@ -258,7 +276,16 @@ static SQLRETURN GetConnectAttrInternal(SQLHDBC connection_handle, SQLINTEGER at
+  */
+ SQLRETURN SQL_API SQLGetConnectAttr(SQLHDBC connection_handle, SQLINTEGER attribute, SQLPOINTER value_ptr,
+                                     SQLINTEGER buffer_length, SQLINTEGER *string_length_ptr) {
++	try {
+ 	return GetConnectAttrInternal<SQLCHAR>(connection_handle, attribute, value_ptr, buffer_length, string_length_ptr);
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ /**
+@@ -268,12 +295,21 @@ SQLRETURN SQL_API SQLGetConnectAttr(SQLHDBC connection_handle, SQLINTEGER attrib
+  */
+ SQLRETURN SQL_API SQLGetConnectAttrW(SQLHDBC connection_handle, SQLINTEGER attribute, SQLPOINTER value_ptr,
+                                      SQLINTEGER buffer_length, SQLINTEGER *string_length_ptr) {
++	try {
+ 	SQLRETURN ret =
+ 	    GetConnectAttrInternal<SQLWCHAR>(connection_handle, attribute, value_ptr, buffer_length, string_length_ptr);
+ 	if (SQL_SUCCEEDED(ret) && string_length_ptr != nullptr) {
+ 		*string_length_ptr = static_cast<SQLINTEGER>(*string_length_ptr * sizeof(SQLWCHAR));
+ 	}
+ 	return ret;
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ //===--------------------------------------------------------------------===//
+@@ -401,7 +437,16 @@ static SQLRETURN SetConnectAttrInternal(SQLHDBC connection_handle, SQLINTEGER at
+  */
+ SQLRETURN SQL_API SQLSetConnectAttr(SQLHDBC connection_handle, SQLINTEGER attribute, SQLPOINTER value_ptr,
+                                     SQLINTEGER string_length) {
++	try {
+ 	return SetConnectAttrInternal<SQLCHAR>(connection_handle, attribute, value_ptr, string_length);
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ /**
+@@ -411,7 +456,16 @@ SQLRETURN SQL_API SQLSetConnectAttr(SQLHDBC connection_handle, SQLINTEGER attrib
+  */
+ SQLRETURN SQL_API SQLSetConnectAttrW(SQLHDBC connection_handle, SQLINTEGER attribute, SQLPOINTER value_ptr,
+                                      SQLINTEGER string_length) {
++	try {
+ 	return SetConnectAttrInternal<SQLWCHAR>(connection_handle, attribute, value_ptr, string_length);
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ //===--------------------------------------------------------------------===//
+@@ -569,7 +623,16 @@ static SQLRETURN GetStmtAttrInternal(SQLHSTMT statement_handle, SQLINTEGER attri
+  */
+ SQLRETURN SQL_API SQLGetStmtAttr(SQLHSTMT statement_handle, SQLINTEGER attribute, SQLPOINTER value_ptr,
+                                  SQLINTEGER buffer_length, SQLINTEGER *string_length_ptr) {
++	try {
+ 	return GetStmtAttrInternal(statement_handle, attribute, value_ptr, buffer_length, string_length_ptr);
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ /**
+@@ -579,7 +642,16 @@ SQLRETURN SQL_API SQLGetStmtAttr(SQLHSTMT statement_handle, SQLINTEGER attribute
+  */
+ SQLRETURN SQL_API SQLGetStmtAttrW(SQLHSTMT statement_handle, SQLINTEGER attribute, SQLPOINTER value_ptr,
+                                   SQLINTEGER buffer_length, SQLINTEGER *string_length_ptr) {
++	try {
+ 	return GetStmtAttrInternal(statement_handle, attribute, value_ptr, buffer_length, string_length_ptr);
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ //===--------------------------------------------------------------------===//
+@@ -726,7 +798,16 @@ static SQLRETURN SetStmtAttrInternal(SQLHSTMT statement_handle, SQLINTEGER attri
+  */
+ SQLRETURN SQL_API SQLSetStmtAttr(SQLHSTMT statement_handle, SQLINTEGER attribute, SQLPOINTER value_ptr,
+                                  SQLINTEGER string_length) {
++	try {
+ 	return SetStmtAttrInternal(statement_handle, attribute, value_ptr, string_length);
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ /**
+@@ -736,5 +817,14 @@ SQLRETURN SQL_API SQLSetStmtAttr(SQLHSTMT statement_handle, SQLINTEGER attribute
+  */
+ SQLRETURN SQL_API SQLSetStmtAttrW(SQLHSTMT statement_handle, SQLINTEGER attribute, SQLPOINTER value_ptr,
+                                   SQLINTEGER string_length) {
++	try {
+ 	return SetStmtAttrInternal(statement_handle, attribute, value_ptr, string_length);
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+diff --git a/src/odbc_api/binding_api.cpp b/src/odbc_api/binding_api.cpp
+index c5fe000e..1d8bcd94 100644
+--- a/src/odbc_api/binding_api.cpp
++++ b/src/odbc_api/binding_api.cpp
+@@ -21,6 +21,7 @@ using duckdb::Value;
+  */
+ SQLRETURN SQL_API SQLBindCol(SQLHSTMT statement_handle, SQLUSMALLINT column_number, SQLSMALLINT target_type,
+                              SQLPOINTER target_value_ptr, SQLLEN buffer_length, SQLLEN *str_len_or_ind_ptr) {
++	try {
+ 	duckdb::OdbcHandleStmt *hstmt = nullptr;
+ 	SQLRETURN ret = ConvertHSTMT(statement_handle, hstmt);
+ 	if (ret != SQL_SUCCESS) {
+@@ -41,6 +42,14 @@ SQLRETURN SQL_API SQLBindCol(SQLHSTMT statement_handle, SQLUSMALLINT column_numb
+ 	hstmt->bound_cols[col_nr_internal].strlen_or_ind = str_len_or_ind_ptr;
+ 
+ 	return SQL_SUCCESS;
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ //===--------------------------------------------------------------------===//
+@@ -55,6 +64,7 @@ SQLRETURN SQL_API SQLBindParameter(SQLHSTMT statement_handle, SQLUSMALLINT param
+                                    SQLSMALLINT input_output_type, SQLSMALLINT value_type, SQLSMALLINT parameter_type,
+                                    SQLULEN column_size, SQLSMALLINT decimal_digits, SQLPOINTER parameter_value_ptr,
+                                    SQLLEN buffer_length, SQLLEN *str_len_or_ind_ptr) {
++	try {
+ 	duckdb::OdbcHandleStmt *hstmt = nullptr;
+ 	SQLRETURN ret = ConvertHSTMT(statement_handle, hstmt);
+ 	if (ret != SQL_SUCCESS) {
+@@ -64,4 +74,12 @@ SQLRETURN SQL_API SQLBindParameter(SQLHSTMT statement_handle, SQLUSMALLINT param
+ 	return duckdb::BindParameterStmt(hstmt, parameter_number, input_output_type, value_type, parameter_type,
+ 	                                 column_size, decimal_digits, parameter_value_ptr, buffer_length,
+ 	                                 str_len_or_ind_ptr);
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+diff --git a/src/odbc_api/column_info_api.cpp b/src/odbc_api/column_info_api.cpp
+index d50a1726..eee0b9ae 100644
+--- a/src/odbc_api/column_info_api.cpp
++++ b/src/odbc_api/column_info_api.cpp
+@@ -116,8 +116,17 @@ static SQLRETURN DescribeColInternal(SQLHSTMT statement_handle, SQLUSMALLINT col
+ SQLRETURN SQL_API SQLDescribeCol(SQLHSTMT statement_handle, SQLUSMALLINT column_number, SQLCHAR *column_name,
+                                  SQLSMALLINT buffer_length, SQLSMALLINT *name_length_ptr, SQLSMALLINT *data_type_ptr,
+                                  SQLULEN *column_size_ptr, SQLSMALLINT *decimal_digits_ptr, SQLSMALLINT *nullable_ptr) {
++	try {
+ 	return DescribeColInternal(statement_handle, column_number, column_name, buffer_length, name_length_ptr,
+ 	                           data_type_ptr, column_size_ptr, decimal_digits_ptr, nullable_ptr);
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ /**
+@@ -129,9 +138,18 @@ SQLRETURN SQL_API SQLDescribeColW(SQLHSTMT statement_handle, SQLUSMALLINT column
+                                   SQLSMALLINT buffer_length, SQLSMALLINT *name_length_ptr, SQLSMALLINT *data_type_ptr,
+                                   SQLULEN *column_size_ptr, SQLSMALLINT *decimal_digits_ptr,
+                                   SQLSMALLINT *nullable_ptr) {
++	try {
+ 	SQLSMALLINT buffer_length_bytes = static_cast<SQLSMALLINT>(buffer_length * sizeof(SQLWCHAR));
+ 	return DescribeColInternal(statement_handle, column_number, column_name, buffer_length_bytes, name_length_ptr,
+ 	                           data_type_ptr, column_size_ptr, decimal_digits_ptr, nullable_ptr);
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ //===--------------------------------------------------------------------===//
+@@ -293,8 +311,17 @@ static SQLRETURN ColAttributeInternal(SQLHSTMT statement_handle, SQLUSMALLINT co
+ SQLRETURN SQL_API SQLColAttribute(SQLHSTMT statement_handle, SQLUSMALLINT column_number, SQLUSMALLINT field_identifier,
+                                   SQLPOINTER character_attribute_ptr, SQLSMALLINT buffer_length,
+                                   SQLSMALLINT *string_length_ptr, SQLLEN *numeric_attribute_ptr) {
++	try {
+ 	return ColAttributeInternal<SQLCHAR>(statement_handle, column_number, field_identifier, character_attribute_ptr,
+ 	                                     buffer_length, string_length_ptr, numeric_attribute_ptr);
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ /**
+@@ -305,6 +332,7 @@ SQLRETURN SQL_API SQLColAttribute(SQLHSTMT statement_handle, SQLUSMALLINT column
+ SQLRETURN SQL_API SQLColAttributeW(SQLHSTMT statement_handle, SQLUSMALLINT column_number, SQLUSMALLINT field_identifier,
+                                    SQLPOINTER character_attribute_ptr, SQLSMALLINT buffer_length,
+                                    SQLSMALLINT *string_length_ptr, SQLLEN *numeric_attribute_ptr) {
++	try {
+ 	auto ret =
+ 	    ColAttributeInternal<SQLWCHAR>(statement_handle, column_number, field_identifier, character_attribute_ptr,
+ 	                                   buffer_length, string_length_ptr, numeric_attribute_ptr);
+@@ -312,6 +340,14 @@ SQLRETURN SQL_API SQLColAttributeW(SQLHSTMT statement_handle, SQLUSMALLINT colum
+ 		*string_length_ptr = static_cast<SQLSMALLINT>(*string_length_ptr * sizeof(SQLWCHAR));
+ 	}
+ 	return ret;
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ /**
+@@ -320,9 +356,18 @@ SQLRETURN SQL_API SQLColAttributeW(SQLHSTMT statement_handle, SQLUSMALLINT colum
+ SQLRETURN SQL_API SQLColAttributes(SQLHSTMT statement_handle, SQLUSMALLINT column_number, SQLUSMALLINT field_identifier,
+                                    SQLPOINTER character_attribute_ptr, SQLSMALLINT buffer_length,
+                                    SQLSMALLINT *string_length_ptr, SQLLEN *numeric_attribute_ptr) {
++	try {
+ 	return ColAttributeInternal<SQLCHAR>(statement_handle, column_number, field_identifier,
+ 	                                     reinterpret_cast<SQLCHAR *>(character_attribute_ptr), buffer_length,
+ 	                                     string_length_ptr, numeric_attribute_ptr);
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ //===--------------------------------------------------------------------===//
+@@ -334,6 +379,7 @@ SQLRETURN SQL_API SQLColAttributes(SQLHSTMT statement_handle, SQLUSMALLINT colum
+  * href="https://learn.microsoft.com/en-us/sql/odbc/reference/syntax/sqlnumresultcols-function?view=sql-server-ver16">Docs</a>
+  */
+ SQLRETURN SQL_API SQLNumResultCols(SQLHSTMT statement_handle, SQLSMALLINT *column_count_ptr) {
++	try {
+ 	duckdb::OdbcHandleStmt *hstmt = nullptr;
+ 	SQLRETURN ret = ConvertHSTMTPrepared(statement_handle, hstmt);
+ 	if (ret != SQL_SUCCESS) {
+@@ -356,4 +402,12 @@ SQLRETURN SQL_API SQLNumResultCols(SQLHSTMT statement_handle, SQLSMALLINT *colum
+ 		*column_count_ptr = 0;
+ 	}
+ 	return SQL_SUCCESS;
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+diff --git a/src/odbc_api/connection_api.cpp b/src/odbc_api/connection_api.cpp
+index 8051d9a4..82ec00f9 100644
+--- a/src/odbc_api/connection_api.cpp
++++ b/src/odbc_api/connection_api.cpp
+@@ -44,8 +44,17 @@ static SQLRETURN ConnectInternal(SQLHDBC connection_handle, SQLCHAR *server_name
+ SQLRETURN SQL_API SQLConnect(SQLHDBC connection_handle, SQLCHAR *server_name, SQLSMALLINT name_length1,
+                              SQLCHAR *user_name, SQLSMALLINT name_length2, SQLCHAR *authentication,
+                              SQLSMALLINT name_length3) {
++	try {
+ 	return ConnectInternal(connection_handle, server_name, name_length1, user_name, name_length2, authentication,
+ 	                       name_length3);
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ /**
+@@ -56,12 +65,21 @@ SQLRETURN SQL_API SQLConnect(SQLHDBC connection_handle, SQLCHAR *server_name, SQ
+ SQLRETURN SQL_API SQLConnectW(SQLHDBC connection_handle, SQLWCHAR *server_name, SQLSMALLINT name_length1,
+                               SQLWCHAR *user_name, SQLSMALLINT name_length2, SQLWCHAR *authentication,
+                               SQLSMALLINT name_length3) {
++	try {
+ 	auto server_name_conv = duckdb::widechar::utf16_conv(server_name, name_length1);
+ 	auto user_name_conv = duckdb::widechar::utf16_conv(user_name, name_length2);
+ 	auto authentication_conv = duckdb::widechar::utf16_conv(authentication, name_length3);
+ 	return ConnectInternal(connection_handle, server_name_conv.utf8_str, server_name_conv.utf8_len_smallint(),
+ 	                       user_name_conv.utf8_str, user_name_conv.utf8_len_smallint(), authentication_conv.utf8_str,
+ 	                       authentication_conv.utf8_len_smallint());
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ //===--------------------------------------------------------------------===//
+@@ -111,8 +129,17 @@ SQLRETURN SQL_API SQLDriverConnect(SQLHDBC connection_handle, SQLHWND window_han
+                                    SQLSMALLINT string_length1, SQLCHAR *out_connection_string,
+                                    SQLSMALLINT buffer_length, SQLSMALLINT *string_length2_ptr,
+                                    SQLUSMALLINT driver_completion) {
++	try {
+ 	return DriverConnectInternal(connection_handle, window_handle, in_connection_string, string_length1,
+ 	                             out_connection_string, buffer_length, string_length2_ptr, driver_completion);
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ /**
+@@ -124,6 +151,7 @@ SQLRETURN SQL_API SQLDriverConnectW(SQLHDBC connection_handle, SQLHWND window_ha
+                                     SQLSMALLINT string_length1, SQLWCHAR *out_connection_string,
+                                     SQLSMALLINT buffer_length, SQLSMALLINT *string_length2_ptr,
+                                     SQLUSMALLINT driver_completion) {
++	try {
+ 	auto in_connection_string_conv = duckdb::widechar::utf16_conv(in_connection_string, string_length1);
+ 	auto out_connection_string_vec = duckdb::widechar::utf8_alloc_out_vec(buffer_length);
+ 	auto ret =
+@@ -136,6 +164,14 @@ SQLRETURN SQL_API SQLDriverConnectW(SQLHDBC connection_handle, SQLHWND window_ha
+ 		*string_length2_ptr = static_cast<SQLSMALLINT>(written);
+ 	}
+ 	return ret;
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ //===--------------------------------------------------------------------===//
+@@ -147,6 +183,7 @@ SQLRETURN SQL_API SQLDriverConnectW(SQLHDBC connection_handle, SQLHWND window_ha
+  * href="https://learn.microsoft.com/en-us/sql/odbc/reference/syntax/sqldisconnect-function?view=sql-server-ver16">Docs</a>
+  */
+ SQLRETURN SQL_API SQLDisconnect(SQLHDBC connection_handle) {
++	try {
+ 	duckdb::OdbcHandleDbc *dbc = nullptr;
+ 	SQLRETURN ret = ConvertConnection(connection_handle, dbc);
+ 	if (ret != SQL_SUCCESS) {
+@@ -155,4 +192,12 @@ SQLRETURN SQL_API SQLDisconnect(SQLHDBC connection_handle) {
+ 
+ 	dbc->conn.reset();
+ 	return SQL_SUCCESS;
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+diff --git a/src/odbc_api/cursor_api.cpp b/src/odbc_api/cursor_api.cpp
+index 017604a0..8b008674 100644
+--- a/src/odbc_api/cursor_api.cpp
++++ b/src/odbc_api/cursor_api.cpp
+@@ -11,6 +11,7 @@
+  * href="https://learn.microsoft.com/en-us/sql/odbc/reference/syntax/sqlclosecursor-function?view=sql-server-ver16">Docs</a>
+  */
+ SQLRETURN SQL_API SQLCloseCursor(SQLHSTMT statement_handle) {
++	try {
+ 	duckdb::OdbcHandleStmt *hstmt = nullptr;
+ 	SQLRETURN ret = ConvertHSTMT(statement_handle, hstmt);
+ 	if (ret != SQL_SUCCESS) {
+@@ -18,4 +19,12 @@ SQLRETURN SQL_API SQLCloseCursor(SQLHSTMT statement_handle) {
+ 	}
+ 
+ 	return duckdb::CloseStmt(hstmt);
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+diff --git a/src/odbc_api/descriptor_api.cpp b/src/odbc_api/descriptor_api.cpp
+index 731543f8..b22a451e 100644
+--- a/src/odbc_api/descriptor_api.cpp
++++ b/src/odbc_api/descriptor_api.cpp
+@@ -381,8 +381,17 @@ static SQLRETURN GetDescFieldInternal(SQLHDESC descriptor_handle, SQLSMALLINT re
+  */
+ SQLRETURN SQL_API SQLGetDescField(SQLHDESC descriptor_handle, SQLSMALLINT rec_number, SQLSMALLINT field_identifier,
+                                   SQLPOINTER value_ptr, SQLINTEGER buffer_length, SQLINTEGER *string_length_ptr) {
++	try {
+ 	return GetDescFieldInternal<SQLCHAR>(descriptor_handle, rec_number, field_identifier, value_ptr, buffer_length,
+ 	                                     string_length_ptr);
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ /**
+@@ -392,12 +401,21 @@ SQLRETURN SQL_API SQLGetDescField(SQLHDESC descriptor_handle, SQLSMALLINT rec_nu
+  */
+ SQLRETURN SQL_API SQLGetDescFieldW(SQLHDESC descriptor_handle, SQLSMALLINT rec_number, SQLSMALLINT field_identifier,
+                                    SQLPOINTER value_ptr, SQLINTEGER buffer_length, SQLINTEGER *string_length_ptr) {
++	try {
+ 	SQLRETURN ret = GetDescFieldInternal<SQLWCHAR>(descriptor_handle, rec_number, field_identifier, value_ptr,
+ 	                                               buffer_length, string_length_ptr);
+ 	if (SQL_SUCCEEDED(ret) && string_length_ptr != nullptr) {
+ 		*string_length_ptr = static_cast<SQLINTEGER>(*string_length_ptr * sizeof(SQLWCHAR));
+ 	}
+ 	return ret;
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ //===--------------------------------------------------------------------===//
+@@ -406,6 +424,7 @@ SQLRETURN SQL_API SQLGetDescFieldW(SQLHDESC descriptor_handle, SQLSMALLINT rec_n
+ 
+ SQLRETURN SQL_API SQLSetDescField(SQLHDESC descriptor_handle, SQLSMALLINT rec_number, SQLSMALLINT field_identifier,
+                                   SQLPOINTER value_ptr, SQLINTEGER buffer_length) {
++	try {
+ 	duckdb::OdbcHandleDesc *desc = nullptr;
+ 	SQLRETURN ret = ConvertDescriptor(descriptor_handle, desc);
+ 	if (ret != SQL_SUCCESS) {
+@@ -413,6 +432,14 @@ SQLRETURN SQL_API SQLSetDescField(SQLHDESC descriptor_handle, SQLSMALLINT rec_nu
+ 	}
+ 
+ 	return desc->SetDescField(rec_number, field_identifier, value_ptr, buffer_length);
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ //===--------------------------------------------------------------------===//
+@@ -476,8 +503,17 @@ SQLRETURN SQL_API SQLGetDescRec(SQLHDESC descriptor_handle, SQLSMALLINT rec_numb
+                                 SQLSMALLINT buffer_length, SQLSMALLINT *string_length_ptr, SQLSMALLINT *type_ptr,
+                                 SQLSMALLINT *sub_type_ptr, SQLLEN *length_ptr, SQLSMALLINT *precision_ptr,
+                                 SQLSMALLINT *scale_ptr, SQLSMALLINT *nullable_ptr) {
++	try {
+ 	return GetDescRecInternal<SQLCHAR>(descriptor_handle, rec_number, name, buffer_length, string_length_ptr, type_ptr,
+ 	                                   sub_type_ptr, length_ptr, precision_ptr, scale_ptr, nullable_ptr);
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ /**
+@@ -489,8 +525,17 @@ SQLRETURN SQL_API SQLGetDescRecW(SQLHDESC descriptor_handle, SQLSMALLINT rec_num
+                                  SQLSMALLINT buffer_length, SQLSMALLINT *string_length_ptr, SQLSMALLINT *type_ptr,
+                                  SQLSMALLINT *sub_type_ptr, SQLLEN *length_ptr, SQLSMALLINT *precision_ptr,
+                                  SQLSMALLINT *scale_ptr, SQLSMALLINT *nullable_ptr) {
++	try {
+ 	return GetDescRecInternal<SQLWCHAR>(descriptor_handle, rec_number, name, buffer_length, string_length_ptr, type_ptr,
+ 	                                    sub_type_ptr, length_ptr, precision_ptr, scale_ptr, nullable_ptr);
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ //===--------------------------------------------------------------------===//
+@@ -504,6 +549,7 @@ SQLRETURN SQL_API SQLGetDescRecW(SQLHDESC descriptor_handle, SQLSMALLINT rec_num
+ SQLRETURN SQL_API SQLSetDescRec(SQLHDESC descriptor_handle, SQLSMALLINT rec_number, SQLSMALLINT type,
+                                 SQLSMALLINT sub_type, SQLLEN length, SQLSMALLINT precision, SQLSMALLINT scale,
+                                 SQLPOINTER data_ptr, SQLLEN *string_length_ptr, SQLLEN *indicator_ptr) {
++	try {
+ 	duckdb::OdbcHandleDesc *desc = nullptr;
+ 	SQLRETURN ret = ConvertDescriptor(descriptor_handle, desc);
+ 	if (ret != SQL_SUCCESS) {
+@@ -554,6 +600,14 @@ SQLRETURN SQL_API SQLSetDescRec(SQLHDESC descriptor_handle, SQLSMALLINT rec_numb
+ 	}
+ 	ret = desc->SetDescField(rec_number, SQL_DESC_INDICATOR_PTR, &indicator_ptr, 0);
+ 	return ret;
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ //===--------------------------------------------------------------------===//
+@@ -565,6 +619,7 @@ SQLRETURN SQL_API SQLSetDescRec(SQLHDESC descriptor_handle, SQLSMALLINT rec_numb
+  * href="https://learn.microsoft.com/en-us/sql/odbc/reference/syntax/sqlcopydesc-function?view=sql-server-ver16">Docs</a>
+  */
+ SQLRETURN SQL_API SQLCopyDesc(SQLHDESC source_desc_handle, SQLHDESC target_desc_handle) {
++	try {
+ 	if (source_desc_handle == nullptr || target_desc_handle == nullptr) {
+ 		return SQL_INVALID_HANDLE;
+ 	}
+@@ -600,4 +655,12 @@ SQLRETURN SQL_API SQLCopyDesc(SQLHDESC source_desc_handle, SQLHDESC target_desc_
+ 		}
+ 	}
+ 	return SQL_SUCCESS;
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+diff --git a/src/odbc_api/diagnostic_api.cpp b/src/odbc_api/diagnostic_api.cpp
+index b252c729..8969864b 100644
+--- a/src/odbc_api/diagnostic_api.cpp
++++ b/src/odbc_api/diagnostic_api.cpp
+@@ -200,8 +200,17 @@ static SQLRETURN GetDiagFieldInternal(SQLSMALLINT handle_type, SQLHANDLE handle,
+ SQLRETURN SQL_API SQLGetDiagField(SQLSMALLINT handle_type, SQLHANDLE handle, SQLSMALLINT rec_number,
+                                   SQLSMALLINT diag_identifier, SQLPOINTER diag_info_ptr, SQLSMALLINT buffer_length,
+                                   SQLSMALLINT *string_length_ptr) {
++	try {
+ 	return GetDiagFieldInternal<SQLCHAR>(handle_type, handle, rec_number, diag_identifier, diag_info_ptr, buffer_length,
+ 	                                     string_length_ptr);
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ /**
+@@ -212,12 +221,21 @@ SQLRETURN SQL_API SQLGetDiagField(SQLSMALLINT handle_type, SQLHANDLE handle, SQL
+ SQLRETURN SQL_API SQLGetDiagFieldW(SQLSMALLINT handle_type, SQLHANDLE handle, SQLSMALLINT rec_number,
+                                    SQLSMALLINT diag_identifier, SQLPOINTER diag_info_ptr, SQLSMALLINT buffer_length,
+                                    SQLSMALLINT *string_length_ptr) {
++	try {
+ 	SQLRETURN ret = GetDiagFieldInternal<SQLWCHAR>(handle_type, handle, rec_number, diag_identifier, diag_info_ptr,
+ 	                                               buffer_length, string_length_ptr);
+ 	if (SQL_SUCCEEDED(ret) && string_length_ptr != nullptr) {
+ 		*string_length_ptr = static_cast<SQLSMALLINT>(*string_length_ptr * sizeof(SQLWCHAR));
+ 	}
+ 	return ret;
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ //===--------------------------------------------------------------------===//
+@@ -368,8 +386,17 @@ static SQLRETURN GetDiagRecInternal(SQLSMALLINT handle_type, SQLHANDLE handle, S
+ SQLRETURN SQL_API SQLGetDiagRec(SQLSMALLINT handle_type, SQLHANDLE handle, SQLSMALLINT rec_number, SQLCHAR *sql_state,
+                                 SQLINTEGER *native_error_ptr, SQLCHAR *message_text, SQLSMALLINT buffer_length,
+                                 SQLSMALLINT *text_length_ptr) {
++	try {
+ 	return GetDiagRecInternal(handle_type, handle, rec_number, sql_state, native_error_ptr, message_text, buffer_length,
+ 	                          text_length_ptr);
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ /**
+@@ -380,6 +407,15 @@ SQLRETURN SQL_API SQLGetDiagRec(SQLSMALLINT handle_type, SQLHANDLE handle, SQLSM
+ SQLRETURN SQL_API SQLGetDiagRecW(SQLSMALLINT handle_type, SQLHANDLE handle, SQLSMALLINT rec_number, SQLWCHAR *sql_state,
+                                  SQLINTEGER *native_error_ptr, SQLWCHAR *message_text, SQLSMALLINT buffer_length,
+                                  SQLSMALLINT *text_length_ptr) {
++	try {
+ 	return GetDiagRecInternal(handle_type, handle, rec_number, sql_state, native_error_ptr, message_text, buffer_length,
+ 	                          text_length_ptr);
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+diff --git a/src/odbc_api/empty_api_stubs.cpp b/src/odbc_api/empty_api_stubs.cpp
+index 0dfbb2f6..6f9eadde 100644
+--- a/src/odbc_api/empty_api_stubs.cpp
++++ b/src/odbc_api/empty_api_stubs.cpp
+@@ -40,19 +40,37 @@ WHERE 1 < 0
+ SQLRETURN SQL_API SQLPrimaryKeys(SQLHSTMT statement_handle, SQLCHAR *catalog_name, SQLSMALLINT name_length1,
+                                  SQLCHAR *schema_name, SQLSMALLINT name_length2, SQLCHAR *table_name,
+                                  SQLSMALLINT name_length3) {
++	try {
+ 	return PrimaryKeysInternal(statement_handle, catalog_name, name_length1, schema_name, name_length2, table_name,
+ 	                           name_length3);
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ SQLRETURN SQL_API SQLPrimaryKeysW(SQLHSTMT statement_handle, SQLWCHAR *catalog_name, SQLSMALLINT name_length1,
+                                   SQLWCHAR *schema_name, SQLSMALLINT name_length2, SQLWCHAR *table_name,
+                                   SQLSMALLINT name_length3) {
++	try {
+ 	auto catalog_name_conv = duckdb::widechar::utf16_conv(catalog_name, name_length1);
+ 	auto schema_name_conv = duckdb::widechar::utf16_conv(schema_name, name_length2);
+ 	auto table_name_conv = duckdb::widechar::utf16_conv(table_name, name_length3);
+ 	return PrimaryKeysInternal(statement_handle, catalog_name_conv.utf8_str, catalog_name_conv.utf8_len_smallint(),
+ 	                           schema_name_conv.utf8_str, schema_name_conv.utf8_len_smallint(),
+ 	                           table_name_conv.utf8_str, table_name_conv.utf8_len_smallint());
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ //===--------------------------------------------------------------------===//
+@@ -97,9 +115,18 @@ SQLRETURN SQL_API SQLForeignKeys(SQLHSTMT statement_handle, SQLCHAR *pk_catalog_
+                                  SQLSMALLINT name_length3, SQLCHAR *fk_catalog_name, SQLSMALLINT name_length4,
+                                  SQLCHAR *fk_schema_name, SQLSMALLINT name_length5, SQLCHAR *fk_table_name,
+                                  SQLSMALLINT name_length6) {
++	try {
+ 	return ForeignKeysInternal(statement_handle, pk_catalog_name, name_length1, pk_schema_name, name_length2,
+ 	                           pk_table_name, name_length3, fk_catalog_name, name_length4, fk_schema_name, name_length5,
+ 	                           fk_table_name, name_length6);
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ SQLRETURN SQL_API SQLForeignKeysW(SQLHSTMT statement_handle, SQLWCHAR *pk_catalog_name, SQLSMALLINT name_length1,
+@@ -107,6 +134,7 @@ SQLRETURN SQL_API SQLForeignKeysW(SQLHSTMT statement_handle, SQLWCHAR *pk_catalo
+                                   SQLSMALLINT name_length3, SQLWCHAR *fk_catalog_name, SQLSMALLINT name_length4,
+                                   SQLWCHAR *fk_schema_name, SQLSMALLINT name_length5, SQLWCHAR *fk_table_name,
+                                   SQLSMALLINT name_length6) {
++	try {
+ 	auto pk_catalog_name_conv = duckdb::widechar::utf16_conv(pk_catalog_name, name_length1);
+ 	auto pk_schema_name_conv = duckdb::widechar::utf16_conv(pk_schema_name, name_length2);
+ 	auto pk_table_name_conv = duckdb::widechar::utf16_conv(pk_table_name, name_length3);
+@@ -119,6 +147,14 @@ SQLRETURN SQL_API SQLForeignKeysW(SQLHSTMT statement_handle, SQLWCHAR *pk_catalo
+ 	    pk_table_name_conv.utf8_len_smallint(), fk_catalog_name_conv.utf8_str, fk_catalog_name_conv.utf8_len_smallint(),
+ 	    fk_schema_name_conv.utf8_str, fk_schema_name_conv.utf8_len_smallint(), fk_table_name_conv.utf8_str,
+ 	    fk_table_name_conv.utf8_len_smallint());
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ //===--------------------------------------------------------------------===//
+@@ -129,6 +165,7 @@ SQLRETURN SQL_API SQLForeignKeysW(SQLHSTMT statement_handle, SQLWCHAR *pk_catalo
+ SQLRETURN SQL_API ProcedureColumnsInternal(SQLHSTMT statement_handle, SQLCHAR *catalog_name, SQLSMALLINT name_length1,
+                                            SQLCHAR *schema_name, SQLSMALLINT name_length2, SQLCHAR *proc_name,
+                                            SQLSMALLINT name_length3, SQLCHAR *column_name, SQLSMALLINT name_length4) {
++	try {
+ 	const std::string query = R"#(
+ SELECT
+ 	CAST('' AS VARCHAR) AS "PROCEDURE_CAT",
+@@ -159,18 +196,36 @@ WHERE 1 < 0
+ 	}
+ 
+ 	return duckdb::ExecDirectStmt(stmt, query);
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ SQLRETURN SQL_API SQLProcedureColumns(SQLHSTMT statement_handle, SQLCHAR *catalog_name, SQLSMALLINT name_length1,
+                                       SQLCHAR *schema_name, SQLSMALLINT name_length2, SQLCHAR *proc_name,
+                                       SQLSMALLINT name_length3, SQLCHAR *column_name, SQLSMALLINT name_length4) {
++	try {
+ 	return ProcedureColumnsInternal(statement_handle, catalog_name, name_length1, schema_name, name_length2, proc_name,
+ 	                                name_length3, column_name, name_length4);
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ SQLRETURN SQL_API SQLProcedureColumnsW(SQLHSTMT statement_handle, SQLWCHAR *catalog_name, SQLSMALLINT name_length1,
+                                        SQLWCHAR *schema_name, SQLSMALLINT name_length2, SQLWCHAR *proc_name,
+                                        SQLSMALLINT name_length3, SQLWCHAR *column_name, SQLSMALLINT name_length4) {
++	try {
+ 	auto catalog_name_conv = duckdb::widechar::utf16_conv(catalog_name, name_length1);
+ 	auto schema_name_conv = duckdb::widechar::utf16_conv(schema_name, name_length2);
+ 	auto proc_name_conv = duckdb::widechar::utf16_conv(proc_name, name_length3);
+@@ -179,6 +234,14 @@ SQLRETURN SQL_API SQLProcedureColumnsW(SQLHSTMT statement_handle, SQLWCHAR *cata
+ 	                                schema_name_conv.utf8_str, schema_name_conv.utf8_len_smallint(),
+ 	                                proc_name_conv.utf8_str, proc_name_conv.utf8_len_smallint(),
+ 	                                column_name_conv.utf8_str, column_name_conv.utf8_len_smallint());
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ //===--------------------------------------------------------------------===//
+@@ -189,6 +252,7 @@ SQLRETURN SQL_API SQLProcedureColumnsW(SQLHSTMT statement_handle, SQLWCHAR *cata
+ SQLRETURN SQL_API ProceduresInternal(SQLHSTMT statement_handle, SQLCHAR *catalog_name, SQLSMALLINT name_length1,
+                                      SQLCHAR *schema_name, SQLSMALLINT name_length2, SQLCHAR *proc_name,
+                                      SQLSMALLINT name_length3) {
++	try {
+ 	const std::string query = R"#(
+ SELECT
+ 	CAST('' AS VARCHAR) AS "PROCEDURE_CAT",
+@@ -208,24 +272,50 @@ WHERE 1 < 0
+ 	}
+ 
+ 	return duckdb::ExecDirectStmt(stmt, query);
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ SQLRETURN SQL_API SQLProcedures(SQLHSTMT statement_handle, SQLCHAR *catalog_name, SQLSMALLINT name_length1,
+                                 SQLCHAR *schema_name, SQLSMALLINT name_length2, SQLCHAR *proc_name,
+                                 SQLSMALLINT name_length3) {
++	try {
+ 	return ProceduresInternal(statement_handle, catalog_name, name_length1, schema_name, name_length2, proc_name,
+ 	                          name_length3);
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ SQLRETURN SQL_API SQLProceduresW(SQLHSTMT statement_handle, SQLWCHAR *catalog_name, SQLSMALLINT name_length1,
+                                  SQLWCHAR *schema_name, SQLSMALLINT name_length2, SQLWCHAR *proc_name,
+                                  SQLSMALLINT name_length3) {
++	try {
+ 	auto catalog_name_conv = duckdb::widechar::utf16_conv(catalog_name, name_length1);
+ 	auto schema_name_conv = duckdb::widechar::utf16_conv(schema_name, name_length2);
+ 	auto proc_name_conv = duckdb::widechar::utf16_conv(proc_name, name_length3);
+ 	return ProceduresInternal(statement_handle, catalog_name_conv.utf8_str, catalog_name_conv.utf8_len_smallint(),
+ 	                          schema_name_conv.utf8_str, schema_name_conv.utf8_len_smallint(), proc_name_conv.utf8_str,
+ 	                          proc_name_conv.utf8_len_smallint());
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ //===--------------------------------------------------------------------===//
+@@ -260,13 +350,23 @@ WHERE 1 < 0
+ SQLRETURN SQL_API SQLColumnPrivileges(SQLHSTMT statement_handle, SQLCHAR *catalog_name, SQLSMALLINT name_length1,
+                                       SQLCHAR *schema_name, SQLSMALLINT name_length2, SQLCHAR *table_name,
+                                       SQLSMALLINT name_length3, SQLCHAR *column_name, SQLSMALLINT name_length4) {
++	try {
+ 	return ColumnPrivilegesInternal(statement_handle, catalog_name, name_length1, schema_name, name_length2, table_name,
+ 	                                name_length3, column_name, name_length4);
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ SQLRETURN SQL_API SQLColumnPrivilegesW(SQLHSTMT statement_handle, SQLWCHAR *catalog_name, SQLSMALLINT name_length1,
+                                        SQLWCHAR *schema_name, SQLSMALLINT name_length2, SQLWCHAR *table_name,
+                                        SQLSMALLINT name_length3, SQLWCHAR *column_name, SQLSMALLINT name_length4) {
++	try {
+ 	auto catalog_name_conv = duckdb::widechar::utf16_conv(catalog_name, name_length1);
+ 	auto schema_name_conv = duckdb::widechar::utf16_conv(schema_name, name_length2);
+ 	auto table_name_conv = duckdb::widechar::utf16_conv(table_name, name_length3);
+@@ -275,6 +375,14 @@ SQLRETURN SQL_API SQLColumnPrivilegesW(SQLHSTMT statement_handle, SQLWCHAR *cata
+ 	                                schema_name_conv.utf8_str, schema_name_conv.utf8_len_smallint(),
+ 	                                table_name_conv.utf8_str, table_name_conv.utf8_len_smallint(),
+ 	                                column_name_conv.utf8_str, column_name_conv.utf8_len_smallint());
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ //===--------------------------------------------------------------------===//
+@@ -308,19 +416,37 @@ WHERE 1 < 0
+ SQLRETURN SQL_API SQLTablePrivileges(SQLHSTMT statement_handle, SQLCHAR *catalog_name, SQLSMALLINT name_length1,
+                                      SQLCHAR *schema_name, SQLSMALLINT name_length2, SQLCHAR *table_name,
+                                      SQLSMALLINT name_length3) {
++	try {
+ 	return TablePrivilegesInternal(statement_handle, catalog_name, name_length1, schema_name, name_length2, table_name,
+ 	                               name_length3);
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ SQLRETURN SQL_API SQLTablePrivilegesW(SQLHSTMT statement_handle, SQLWCHAR *catalog_name, SQLSMALLINT name_length1,
+                                       SQLWCHAR *schema_name, SQLSMALLINT name_length2, SQLWCHAR *table_name,
+                                       SQLSMALLINT name_length3) {
++	try {
+ 	auto catalog_name_conv = duckdb::widechar::utf16_conv(catalog_name, name_length1);
+ 	auto schema_name_conv = duckdb::widechar::utf16_conv(schema_name, name_length2);
+ 	auto table_name_conv = duckdb::widechar::utf16_conv(table_name, name_length3);
+ 	return TablePrivilegesInternal(statement_handle, catalog_name_conv.utf8_str, catalog_name_conv.utf8_len_smallint(),
+ 	                               schema_name_conv.utf8_str, schema_name_conv.utf8_len_smallint(),
+ 	                               table_name_conv.utf8_str, table_name_conv.utf8_len_smallint());
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ //===--------------------------------------------------------------------===//
+@@ -357,14 +483,24 @@ SQLRETURN SQL_API SQLSpecialColumns(SQLHSTMT statement_handle, SQLUSMALLINT iden
+                                     SQLSMALLINT name_length1, SQLCHAR *schema_name, SQLSMALLINT name_length2,
+                                     SQLCHAR *table_name, SQLSMALLINT name_length3, SQLUSMALLINT scope,
+                                     SQLUSMALLINT nullable) {
++	try {
+ 	return SpecialColumnsInternal(statement_handle, identifier_type, catalog_name, name_length1, schema_name,
+ 	                              name_length2, table_name, name_length3, scope, nullable);
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ SQLRETURN SQL_API SQLSpecialColumnsW(SQLHSTMT statement_handle, SQLUSMALLINT identifier_type, SQLWCHAR *catalog_name,
+                                      SQLSMALLINT name_length1, SQLWCHAR *schema_name, SQLSMALLINT name_length2,
+                                      SQLWCHAR *table_name, SQLSMALLINT name_length3, SQLUSMALLINT scope,
+                                      SQLUSMALLINT nullable) {
++	try {
+ 	auto catalog_name_conv = duckdb::widechar::utf16_conv(catalog_name, name_length1);
+ 	auto schema_name_conv = duckdb::widechar::utf16_conv(schema_name, name_length2);
+ 	auto table_name_conv = duckdb::widechar::utf16_conv(table_name, name_length3);
+@@ -372,6 +508,14 @@ SQLRETURN SQL_API SQLSpecialColumnsW(SQLHSTMT statement_handle, SQLUSMALLINT ide
+ 	                              catalog_name_conv.utf8_len_smallint(), schema_name_conv.utf8_str,
+ 	                              schema_name_conv.utf8_len_smallint(), table_name_conv.utf8_str,
+ 	                              table_name_conv.utf8_len_smallint(), scope, nullable);
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ //===--------------------------------------------------------------------===//
+@@ -411,19 +555,37 @@ WHERE 1 < 0
+ SQLRETURN SQL_API SQLStatistics(SQLHSTMT statement_handle, SQLCHAR *catalog_name, SQLSMALLINT name_length1,
+                                 SQLCHAR *schema_name, SQLSMALLINT name_length2, SQLCHAR *table_name,
+                                 SQLSMALLINT name_length3, SQLUSMALLINT unique, SQLUSMALLINT reserved) {
++	try {
+ 	return StatisticsInternal(statement_handle, catalog_name, name_length1, schema_name, name_length2, table_name,
+ 	                          name_length3, unique, reserved);
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ SQLRETURN SQL_API SQLStatisticsW(SQLHSTMT statement_handle, SQLWCHAR *catalog_name, SQLSMALLINT name_length1,
+                                  SQLWCHAR *schema_name, SQLSMALLINT name_length2, SQLWCHAR *table_name,
+                                  SQLSMALLINT name_length3, SQLUSMALLINT unique, SQLUSMALLINT reserved) {
++	try {
+ 	auto catalog_name_conv = duckdb::widechar::utf16_conv(catalog_name, name_length1);
+ 	auto schema_name_conv = duckdb::widechar::utf16_conv(schema_name, name_length2);
+ 	auto table_name_conv = duckdb::widechar::utf16_conv(table_name, name_length3);
+ 	return StatisticsInternal(statement_handle, catalog_name_conv.utf8_str, catalog_name_conv.utf8_len_smallint(),
+ 	                          schema_name_conv.utf8_str, schema_name_conv.utf8_len_smallint(), table_name_conv.utf8_str,
+ 	                          table_name_conv.utf8_len_smallint(), unique, reserved);
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ // ============================================================================
+@@ -453,17 +615,35 @@ static SQLRETURN NativeSQLInternal(SQLHDBC connection_handle, SQLCHAR *in_statem
+ 
+ SQLRETURN SQL_API SQLNativeSql(SQLHDBC connection_handle, SQLCHAR *in_statement_text, SQLINTEGER text_length1,
+                                SQLCHAR *out_statement_text, SQLINTEGER buffer_length, SQLINTEGER *text_length2_ptr) {
++	try {
+ 	return NativeSQLInternal(connection_handle, in_statement_text, text_length1, out_statement_text, buffer_length,
+ 	                         text_length2_ptr);
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ SQLRETURN SQL_API SQLNativeSqlW(SQLHDBC connection_handle, SQLWCHAR *in_statement_text, SQLINTEGER text_length1,
+                                 SQLWCHAR *out_statement_text, SQLINTEGER buffer_length, SQLINTEGER *text_length2_ptr) {
++	try {
+ 	auto in_statement_text_conv = duckdb::widechar::utf16_conv(in_statement_text, text_length1);
+ 	auto out_statement_text_conv = duckdb::widechar::utf16_conv(out_statement_text, buffer_length);
+ 	return NativeSQLInternal(connection_handle, in_statement_text_conv.utf8_str,
+ 	                         in_statement_text_conv.utf8_len_smallint(), out_statement_text_conv.utf8_str,
+ 	                         out_statement_text_conv.utf8_len_smallint(), text_length2_ptr);
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ //===--------------------------------------------------------------------===//
+@@ -485,18 +665,36 @@ static SQLRETURN BrowseConnectInternal(SQLHDBC connection_handle, SQLCHAR *in_co
+ SQLRETURN SQL_API SQLBrowseConnect(SQLHDBC connection_handle, SQLCHAR *in_connection_string, SQLSMALLINT string_length1,
+                                    SQLCHAR *out_connection_string, SQLSMALLINT buffer_length,
+                                    SQLSMALLINT *string_length2_ptr) {
++	try {
+ 	return BrowseConnectInternal(connection_handle, in_connection_string, string_length1, out_connection_string,
+ 	                             buffer_length, string_length2_ptr);
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ SQLRETURN SQL_API SQLBrowseConnectW(SQLHDBC connection_handle, SQLWCHAR *in_connection_string,
+                                     SQLSMALLINT string_length1, SQLWCHAR *out_connection_string,
+                                     SQLSMALLINT buffer_length, SQLSMALLINT *string_length2_ptr) {
++	try {
+ 	auto in_connection_string_conv = duckdb::widechar::utf16_conv(in_connection_string, string_length1);
+ 	auto out_connection_string_conv = duckdb::widechar::utf16_conv(out_connection_string, buffer_length);
+ 	return BrowseConnectInternal(connection_handle, in_connection_string_conv.utf8_str,
+ 	                             in_connection_string_conv.utf8_len_smallint(), out_connection_string_conv.utf8_str,
+ 	                             out_connection_string_conv.utf8_len_smallint(), string_length2_ptr);
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ //===--------------------------------------------------------------------===//
+@@ -504,6 +702,7 @@ SQLRETURN SQL_API SQLBrowseConnectW(SQLHDBC connection_handle, SQLWCHAR *in_conn
+ //===--------------------------------------------------------------------===//
+ 
+ SQLRETURN SQL_API SQLBulkOperations(SQLHSTMT statement_handle, SQLSMALLINT operation) {
++	try {
+ 	duckdb::OdbcHandle *hstmt;
+ 	const auto ret = ConvertHandle(statement_handle, hstmt);
+ 	if (ret != SQL_SUCCESS) {
+@@ -511,6 +710,14 @@ SQLRETURN SQL_API SQLBulkOperations(SQLHSTMT statement_handle, SQLSMALLINT opera
+ 	}
+ 
+ 	return SetNotImplemented(hstmt, "SQLBulkOperations");
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ //===--------------------------------------------------------------------===//
+@@ -519,6 +726,7 @@ SQLRETURN SQL_API SQLBulkOperations(SQLHSTMT statement_handle, SQLSMALLINT opera
+ 
+ SQLRETURN SQL_API SQLSetPos(SQLHSTMT statement_handle, SQLSETPOSIROW row_number, SQLUSMALLINT operation,
+                             SQLUSMALLINT lock_type) {
++	try {
+ 	duckdb::OdbcHandle *hstmt;
+ 	const auto ret = ConvertHandle(statement_handle, hstmt);
+ 	if (ret != SQL_SUCCESS) {
+@@ -526,6 +734,14 @@ SQLRETURN SQL_API SQLSetPos(SQLHSTMT statement_handle, SQLSETPOSIROW row_number,
+ 	}
+ 
+ 	return SetNotImplemented(hstmt, "SQLSetPos");
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ //===--------------------------------------------------------------------===//
+@@ -534,6 +750,7 @@ SQLRETURN SQL_API SQLSetPos(SQLHSTMT statement_handle, SQLSETPOSIROW row_number,
+ //===--------------------------------------------------------------------===//
+ 
+ SQLRETURN SQL_API SQLSetCursorName(SQLHSTMT statement_handle, SQLCHAR *cursor_name, SQLSMALLINT name_length) {
++	try {
+ 	duckdb::OdbcHandle *hstmt;
+ 	const auto ret = ConvertHandle(statement_handle, hstmt);
+ 	if (ret != SQL_SUCCESS) {
+@@ -541,9 +758,18 @@ SQLRETURN SQL_API SQLSetCursorName(SQLHSTMT statement_handle, SQLCHAR *cursor_na
+ 	}
+ 
+ 	return SetNotImplemented(hstmt, "SQLSetCursorName");
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ SQLRETURN SQL_API SQLSetCursorNameW(SQLHSTMT statement_handle, SQLWCHAR *cursor_name, SQLSMALLINT name_length) {
++	try {
+ 	duckdb::OdbcHandle *hstmt;
+ 	const auto ret = ConvertHandle(statement_handle, hstmt);
+ 	if (ret != SQL_SUCCESS) {
+@@ -551,6 +777,14 @@ SQLRETURN SQL_API SQLSetCursorNameW(SQLHSTMT statement_handle, SQLWCHAR *cursor_
+ 	}
+ 
+ 	return SetNotImplemented(hstmt, "SQLSetCursorNameW");
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ //===--------------------------------------------------------------------===//
+@@ -560,6 +794,7 @@ SQLRETURN SQL_API SQLSetCursorNameW(SQLHSTMT statement_handle, SQLWCHAR *cursor_
+ 
+ SQLRETURN SQL_API SQLGetCursorName(SQLHSTMT statement_handle, SQLCHAR *cursor_name, SQLSMALLINT name_length,
+                                    SQLSMALLINT *length_ptr) {
++	try {
+ 	duckdb::OdbcHandle *hstmt;
+ 	const auto ret = ConvertHandle(statement_handle, hstmt);
+ 	if (ret != SQL_SUCCESS) {
+@@ -567,10 +802,19 @@ SQLRETURN SQL_API SQLGetCursorName(SQLHSTMT statement_handle, SQLCHAR *cursor_na
+ 	}
+ 
+ 	return SetNotImplemented(hstmt, "SQLGetCursorName");
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ SQLRETURN SQL_API SQLGetCursorNameW(SQLHSTMT statement_handle, SQLWCHAR *cursor_name, SQLSMALLINT name_length,
+                                     SQLSMALLINT *length_ptr) {
++	try {
+ 	duckdb::OdbcHandle *hstmt;
+ 	const auto ret = ConvertHandle(statement_handle, hstmt);
+ 	if (ret != SQL_SUCCESS) {
+@@ -578,4 +822,12 @@ SQLRETURN SQL_API SQLGetCursorNameW(SQLHSTMT statement_handle, SQLWCHAR *cursor_
+ 	}
+ 
+ 	return SetNotImplemented(hstmt, "SQLGetCursorNameW");
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+diff --git a/src/odbc_api/handle_api.cpp b/src/odbc_api/handle_api.cpp
+index 0343ac3c..63f659b6 100644
+--- a/src/odbc_api/handle_api.cpp
++++ b/src/odbc_api/handle_api.cpp
+@@ -22,6 +22,7 @@ using duckdb::SQLStateType;
+  * href="https://learn.microsoft.com/en-us/sql/odbc/reference/syntax/sqlallochandle-function?view=sql-server-ver16">Docs</a>
+  */
+ SQLRETURN SQL_API SQLAllocHandle(SQLSMALLINT handle_type, SQLHANDLE input_handle, SQLHANDLE *output_handle_ptr) {
++	try {
+ 	switch (handle_type) {
+ 	case SQL_HANDLE_DBC: {
+ 		D_ASSERT(input_handle);
+@@ -51,6 +52,14 @@ SQLRETURN SQL_API SQLAllocHandle(SQLSMALLINT handle_type, SQLHANDLE input_handle
+ 	default:
+ 		return SQL_INVALID_HANDLE;
+ 	}
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ //===--------------------------------------------------------------------===//
+@@ -62,7 +71,16 @@ SQLRETURN SQL_API SQLAllocHandle(SQLSMALLINT handle_type, SQLHANDLE input_handle
+  * href="https://learn.microsoft.com/en-us/sql/odbc/reference/syntax/sqlfreehandle-function?view=sql-server-ver16">Docs</a>
+  */
+ SQLRETURN SQL_API SQLFreeHandle(SQLSMALLINT handle_type, SQLHANDLE handle) {
++	try {
+ 	return duckdb::FreeHandle(handle_type, handle);
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ //===--------------------------------------------------------------------===//
+@@ -74,6 +92,7 @@ SQLRETURN SQL_API SQLFreeHandle(SQLSMALLINT handle_type, SQLHANDLE handle) {
+  * href="https://learn.microsoft.com/en-us/sql/odbc/reference/syntax/sqlfreestmt-function?view=sql-server-ver16">Docs</a>
+  */
+ SQLRETURN SQL_API SQLFreeStmt(SQLHSTMT statement_handle, SQLUSMALLINT option) {
++	try {
+ 	duckdb::OdbcHandleStmt *hstmt = nullptr;
+ 	SQLRETURN ret = ConvertHSTMT(statement_handle, hstmt);
+ 	if (ret != SQL_SUCCESS) {
+@@ -96,4 +115,12 @@ SQLRETURN SQL_API SQLFreeStmt(SQLHSTMT statement_handle, SQLUSMALLINT option) {
+ 		return duckdb::CloseStmt(hstmt);
+ 	}
+ 	return SQL_ERROR;
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+diff --git a/src/odbc_api/info_api.cpp b/src/odbc_api/info_api.cpp
+index 40e364a1..59e5f0e7 100644
+--- a/src/odbc_api/info_api.cpp
++++ b/src/odbc_api/info_api.cpp
+@@ -913,7 +913,16 @@ static SQLRETURN GetInfoInternal(SQLHDBC connection_handle, SQLUSMALLINT info_ty
+  */
+ SQLRETURN SQL_API SQLGetInfo(SQLHDBC connection_handle, SQLUSMALLINT info_type, SQLPOINTER info_value_ptr,
+                              SQLSMALLINT buffer_length, SQLSMALLINT *string_length_ptr) {
++	try {
+ 	return GetInfoInternal<SQLCHAR>(connection_handle, info_type, info_value_ptr, buffer_length, string_length_ptr);
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ /**
+@@ -923,12 +932,21 @@ SQLRETURN SQL_API SQLGetInfo(SQLHDBC connection_handle, SQLUSMALLINT info_type,
+  */
+ SQLRETURN SQL_API SQLGetInfoW(SQLHDBC connection_handle, SQLUSMALLINT info_type, SQLPOINTER info_value_ptr,
+                               SQLSMALLINT buffer_length, SQLSMALLINT *string_length_ptr) {
++	try {
+ 	SQLRETURN ret =
+ 	    GetInfoInternal<SQLWCHAR>(connection_handle, info_type, info_value_ptr, buffer_length, string_length_ptr);
+ 	if (SQL_SUCCEEDED(ret) && string_length_ptr != nullptr) {
+ 		*string_length_ptr = static_cast<SQLSMALLINT>(*string_length_ptr * sizeof(SQLWCHAR));
+ 	}
+ 	return ret;
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ //===--------------------------------------------------------------------===//
+@@ -940,11 +958,20 @@ SQLRETURN SQL_API SQLGetInfoW(SQLHDBC connection_handle, SQLUSMALLINT info_type,
+  * href="https://learn.microsoft.com/en-us/sql/odbc/reference/syntax/sqlgetfunctions-function?view=sql-server-ver16">Docs</a>
+  */
+ SQLRETURN SQL_API SQLGetFunctions(SQLHDBC connection_handle, SQLUSMALLINT function_id, SQLUSMALLINT *supported_ptr) {
++	try {
+ 	if (function_id == SQL_API_ODBC3_ALL_FUNCTIONS) {
+ 		return ApiInfo::GetFunctions30(connection_handle, function_id, supported_ptr);
+ 	} else {
+ 		return ApiInfo::GetFunctions(connection_handle, function_id, supported_ptr);
+ 	}
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ //===--------------------------------------------------------------------===//
+@@ -1002,7 +1029,16 @@ static SQLRETURN GetTypeInfoInternal(SQLHSTMT statement_handle, SQLSMALLINT data
+  * href="https://learn.microsoft.com/en-us/sql/odbc/reference/syntax/sqlgettypeinfo-function?view=sql-server-ver16">Docs</a>
+  */
+ SQLRETURN SQL_API SQLGetTypeInfo(SQLHSTMT statement_handle, SQLSMALLINT data_type) {
++	try {
+ 	return GetTypeInfoInternal(statement_handle, data_type);
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ /**
+@@ -1011,7 +1047,16 @@ SQLRETURN SQL_API SQLGetTypeInfo(SQLHSTMT statement_handle, SQLSMALLINT data_typ
+  * href="https://learn.microsoft.com/en-us/sql/odbc/reference/syntax/sqlgettypeinfo-function?view=sql-server-ver16">Docs</a>
+  */
+ SQLRETURN SQL_API SQLGetTypeInfoW(SQLHSTMT statement_handle, SQLSMALLINT data_type) {
++	try {
+ 	return GetTypeInfoInternal(statement_handle, data_type);
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ //===--------------------------------------------------------------------===//
+@@ -1038,8 +1083,17 @@ static SQLRETURN DataSourcesInternal(SQLHENV environment_handle, SQLUSMALLINT di
+ SQLRETURN SQL_API SQLDataSources(SQLHENV environment_handle, SQLUSMALLINT direction, SQLCHAR *server_name,
+                                  SQLSMALLINT buffer_length1, SQLSMALLINT *name_length1_ptr, SQLCHAR *description,
+                                  SQLSMALLINT buffer_length2, SQLSMALLINT *name_length2_ptr) {
++	try {
+ 	return DataSourcesInternal(environment_handle, direction, server_name, buffer_length1, name_length1_ptr,
+ 	                           description, buffer_length2, name_length2_ptr);
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ /**
+@@ -1050,11 +1104,20 @@ SQLRETURN SQL_API SQLDataSources(SQLHENV environment_handle, SQLUSMALLINT direct
+ SQLRETURN SQL_API SQLDataSourcesW(SQLHENV environment_handle, SQLUSMALLINT direction, SQLWCHAR *server_name,
+                                   SQLSMALLINT buffer_length1, SQLSMALLINT *name_length1_ptr, SQLWCHAR *description,
+                                   SQLSMALLINT buffer_length2, SQLSMALLINT *name_length2_ptr) {
++	try {
+ 	auto server_name_conv = duckdb::widechar::utf16_conv(server_name, buffer_length1);
+ 	auto description_conv = duckdb::widechar::utf16_conv(description, buffer_length2);
+ 	return DataSourcesInternal(environment_handle, direction, server_name_conv.utf8_str,
+ 	                           server_name_conv.utf8_len_smallint(), name_length1_ptr, description_conv.utf8_str,
+ 	                           description_conv.utf8_len_smallint(), name_length2_ptr);
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ //===--------------------------------------------------------------------===//
+@@ -1069,6 +1132,7 @@ SQLRETURN SQL_API SQLDrivers(SQLHENV environment_handle, SQLUSMALLINT direction,
+                              SQLSMALLINT buffer_length1, SQLSMALLINT *description_length_ptr,
+                              SQLCHAR *driver_attributes, SQLSMALLINT buffer_length2,
+                              SQLSMALLINT *attributes_length_ptr) {
++	try {
+ 	duckdb::OdbcHandleEnv *env = nullptr;
+ 	SQLRETURN ret = ConvertEnvironment(environment_handle, env);
+ 	if (ret != SQL_SUCCESS) {
+@@ -1077,4 +1141,12 @@ SQLRETURN SQL_API SQLDrivers(SQLHENV environment_handle, SQLUSMALLINT direction,
+ 
+ 	return duckdb::SetDiagnosticRecord(env, SQL_ERROR, "SQLDrivers", "Driver Manager only function",
+ 	                                   SQLStateType::ST_HY000, "");
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+diff --git a/src/odbc_api/metadata_api.cpp b/src/odbc_api/metadata_api.cpp
+index 85f01a34..1411e1f8 100644
+--- a/src/odbc_api/metadata_api.cpp
++++ b/src/odbc_api/metadata_api.cpp
+@@ -122,8 +122,17 @@ SELECT
+ SQLRETURN SQL_API SQLTables(SQLHSTMT statement_handle, SQLCHAR *catalog_name, SQLSMALLINT name_length1,
+                             SQLCHAR *schema_name, SQLSMALLINT name_length2, SQLCHAR *table_name,
+                             SQLSMALLINT name_length3, SQLCHAR *table_type, SQLSMALLINT name_length4) {
++	try {
+ 	return TablesInternal(statement_handle, catalog_name, name_length1, schema_name, name_length2, table_name,
+ 	                      name_length3, table_type, name_length4);
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ /**
+@@ -134,6 +143,7 @@ SQLRETURN SQL_API SQLTables(SQLHSTMT statement_handle, SQLCHAR *catalog_name, SQ
+ SQLRETURN SQL_API SQLTablesW(SQLHSTMT statement_handle, SQLWCHAR *catalog_name, SQLSMALLINT name_length1,
+                              SQLWCHAR *schema_name, SQLSMALLINT name_length2, SQLWCHAR *table_name,
+                              SQLSMALLINT name_length3, SQLWCHAR *table_type, SQLSMALLINT name_length4) {
++	try {
+ 	auto catalog_name_conv = duckdb::widechar::utf16_conv(catalog_name, name_length1);
+ 	auto schema_name_conv = duckdb::widechar::utf16_conv(schema_name, name_length2);
+ 	auto table_name_conv = duckdb::widechar::utf16_conv(table_name, name_length3);
+@@ -142,6 +152,14 @@ SQLRETURN SQL_API SQLTablesW(SQLHSTMT statement_handle, SQLWCHAR *catalog_name,
+ 	                      schema_name_conv.utf8_str, schema_name_conv.utf8_len_smallint(), table_name_conv.utf8_str,
+ 	                      table_name_conv.utf8_len_smallint(), table_type_conv.utf8_str,
+ 	                      table_type_conv.utf8_len_smallint());
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ //===--------------------------------------------------------------------===//
+@@ -197,8 +215,17 @@ static SQLRETURN ColumnsInternal(SQLHSTMT statement_handle, SQLCHAR *catalog_nam
+ SQLRETURN SQL_API SQLColumns(SQLHSTMT statement_handle, SQLCHAR *catalog_name, SQLSMALLINT name_length1,
+                              SQLCHAR *schema_name, SQLSMALLINT name_length2, SQLCHAR *table_name,
+                              SQLSMALLINT name_length3, SQLCHAR *column_name, SQLSMALLINT name_length4) {
++	try {
+ 	return ColumnsInternal(statement_handle, catalog_name, name_length1, schema_name, name_length2, table_name,
+ 	                       name_length3, column_name, name_length4);
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ /**
+@@ -209,6 +236,7 @@ SQLRETURN SQL_API SQLColumns(SQLHSTMT statement_handle, SQLCHAR *catalog_name, S
+ SQLRETURN SQL_API SQLColumnsW(SQLHSTMT statement_handle, SQLWCHAR *catalog_name, SQLSMALLINT name_length1,
+                               SQLWCHAR *schema_name, SQLSMALLINT name_length2, SQLWCHAR *table_name,
+                               SQLSMALLINT name_length3, SQLWCHAR *column_name, SQLSMALLINT name_length4) {
++	try {
+ 
+ 	auto catalog_name_conv = duckdb::widechar::utf16_conv(catalog_name, name_length1);
+ 	auto schema_name_conv = duckdb::widechar::utf16_conv(schema_name, name_length2);
+@@ -219,4 +247,12 @@ SQLRETURN SQL_API SQLColumnsW(SQLHSTMT statement_handle, SQLWCHAR *catalog_name,
+ 	                       schema_name_conv.utf8_str, schema_name_conv.utf8_len_smallint(), table_name_conv.utf8_str,
+ 	                       table_name_conv.utf8_len_smallint(), column_name_conv.utf8_str,
+ 	                       column_name_conv.utf8_len_smallint());
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+diff --git a/src/odbc_api/parameter_api.cpp b/src/odbc_api/parameter_api.cpp
+index 297698c9..b9fc7475 100644
+--- a/src/odbc_api/parameter_api.cpp
++++ b/src/odbc_api/parameter_api.cpp
+@@ -22,6 +22,7 @@ using duckdb::Value;
+ SQLRETURN SQL_API SQLDescribeParam(SQLHSTMT statement_handle, SQLUSMALLINT parameter_number, SQLSMALLINT *data_type_ptr,
+                                    SQLULEN *parameter_size_ptr, SQLSMALLINT *decimal_digits_ptr,
+                                    SQLSMALLINT *nullable_ptr) {
++	try {
+ 	duckdb::OdbcHandleStmt *hstmt = nullptr;
+ 	SQLRETURN ret = ConvertHSTMTPrepared(statement_handle, hstmt);
+ 	if (ret != SQL_SUCCESS) {
+@@ -72,6 +73,14 @@ SQLRETURN SQL_API SQLDescribeParam(SQLHSTMT statement_handle, SQLUSMALLINT param
+ 		*nullable_ptr = SQL_NULLABLE_UNKNOWN;
+ 	}
+ 	return SQL_SUCCESS;
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ //===--------------------------------------------------------------------===//
+@@ -83,6 +92,7 @@ SQLRETURN SQL_API SQLDescribeParam(SQLHSTMT statement_handle, SQLUSMALLINT param
+  * href="https://learn.microsoft.com/en-us/sql/odbc/reference/syntax/sqlnumparams-function?view=sql-server-ver15">Docs</a>
+  */
+ SQLRETURN SQL_API SQLNumParams(SQLHSTMT statement_handle, SQLSMALLINT *parameter_count_ptr) {
++	try {
+ 	duckdb::OdbcHandleStmt *hstmt = nullptr;
+ 	SQLRETURN ret = ConvertHSTMTPrepared(statement_handle, hstmt);
+ 	if (ret != SQL_SUCCESS) {
+@@ -94,6 +104,14 @@ SQLRETURN SQL_API SQLNumParams(SQLHSTMT statement_handle, SQLSMALLINT *parameter
+ 	}
+ 	*parameter_count_ptr = (SQLSMALLINT)hstmt->stmt->named_param_map.size();
+ 	return SQL_SUCCESS;
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ //===--------------------------------------------------------------------===//
+@@ -105,6 +123,7 @@ SQLRETURN SQL_API SQLNumParams(SQLHSTMT statement_handle, SQLSMALLINT *parameter
+  * href="https://learn.microsoft.com/en-us/sql/odbc/reference/syntax/sqlparamdata-function?view=sql-server-ver15">Docs</a>
+  */
+ SQLRETURN SQL_API SQLParamData(SQLHSTMT statement_handle, SQLPOINTER *value_ptr_ptr) {
++	try {
+ 	duckdb::OdbcHandleStmt *hstmt = nullptr;
+ 	SQLRETURN ret = ConvertHSTMTPrepared(statement_handle, hstmt);
+ 	if (ret != SQL_SUCCESS) {
+@@ -117,6 +136,14 @@ SQLRETURN SQL_API SQLParamData(SQLHSTMT statement_handle, SQLPOINTER *value_ptr_
+ 	}
+ 	// should try to get value from bound columns
+ 	return SQL_SUCCESS;
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ //===--------------------------------------------------------------------===//
+@@ -128,6 +155,7 @@ SQLRETURN SQL_API SQLParamData(SQLHSTMT statement_handle, SQLPOINTER *value_ptr_
+  * href="https://learn.microsoft.com/en-us/sql/odbc/reference/syntax/sqlputdata-function?view=sql-server-ver16">Docs</a>
+  */
+ SQLRETURN SQL_API SQLPutData(SQLHSTMT statement_handle, SQLPOINTER data_ptr, SQLLEN str_len_or_ind_ptr) {
++	try {
+ 	duckdb::OdbcHandleStmt *hstmt = nullptr;
+ 	SQLRETURN ret = ConvertHSTMTPrepared(statement_handle, hstmt);
+ 	if (ret != SQL_SUCCESS) {
+@@ -141,4 +169,12 @@ SQLRETURN SQL_API SQLPutData(SQLHSTMT statement_handle, SQLPOINTER data_ptr, SQL
+ 
+ 	// should try to put value into bound columns
+ 	return SQL_SUCCESS;
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+diff --git a/src/odbc_api/result_api.cpp b/src/odbc_api/result_api.cpp
+index a58c01ea..a109c27b 100644
+--- a/src/odbc_api/result_api.cpp
++++ b/src/odbc_api/result_api.cpp
+@@ -36,6 +36,7 @@ static SQLRETURN ExecuteBeforeFetch(SQLHSTMT statement_handle) {
+  * href="https://learn.microsoft.com/en-us/sql/odbc/reference/syntax/sqlfetch-function?view=sql-server-ver16">Docs</a>
+  */
+ SQLRETURN SQL_API SQLFetch(SQLHSTMT statement_handle) {
++	try {
+ 	duckdb::OdbcHandleStmt *hstmt = nullptr;
+ 	SQLRETURN ret = ConvertHSTMTPrepared(statement_handle, hstmt);
+ 	if (ret != SQL_SUCCESS) {
+@@ -52,6 +53,14 @@ SQLRETURN SQL_API SQLFetch(SQLHSTMT statement_handle) {
+ 		return ret;
+ 	}
+ 	return duckdb::FetchStmtResult(hstmt);
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ //===--------------------------------------------------------------------===//
+@@ -63,6 +72,7 @@ SQLRETURN SQL_API SQLFetch(SQLHSTMT statement_handle) {
+  * href="https://learn.microsoft.com/en-us/sql/odbc/reference/syntax/sqlfetchscroll-function?view=sql-server-ver16">Docs</a>
+  */
+ SQLRETURN SQL_API SQLFetchScroll(SQLHSTMT statement_handle, SQLSMALLINT fetch_orientation, SQLLEN fetch_offset) {
++	try {
+ 	switch (fetch_orientation) {
+ 	case SQL_FETCH_FIRST:
+ 	case SQL_FETCH_ABSOLUTE:
+@@ -80,6 +90,14 @@ SQLRETURN SQL_API SQLFetchScroll(SQLHSTMT statement_handle, SQLSMALLINT fetch_or
+ 	default:
+ 		return SQL_ERROR;
+ 	}
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ //===--------------------------------------------------------------------===//
+@@ -88,6 +106,7 @@ SQLRETURN SQL_API SQLFetchScroll(SQLHSTMT statement_handle, SQLSMALLINT fetch_or
+ 
+ SQLRETURN SQL_API SQLGetData(SQLHSTMT statement_handle, SQLUSMALLINT col_or_param_num, SQLSMALLINT target_type,
+                              SQLPOINTER target_value_ptr, SQLLEN buffer_length, SQLLEN *str_len_or_ind_ptr) {
++	try {
+ 	duckdb::OdbcHandleStmt *hstmt = nullptr;
+ 	SQLRETURN ret = ConvertHSTMTResult(statement_handle, hstmt);
+ 	if (ret != SQL_SUCCESS) {
+@@ -96,6 +115,14 @@ SQLRETURN SQL_API SQLGetData(SQLHSTMT statement_handle, SQLUSMALLINT col_or_para
+ 
+ 	return duckdb::GetDataStmtResult(hstmt, col_or_param_num, target_type, target_value_ptr, buffer_length,
+ 	                                 str_len_or_ind_ptr);
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ //===--------------------------------------------------------------------===//
+@@ -107,6 +134,7 @@ SQLRETURN SQL_API SQLGetData(SQLHSTMT statement_handle, SQLUSMALLINT col_or_para
+  * href="https://learn.microsoft.com/en-us/sql/odbc/reference/syntax/sqlmoreresults-function?view=sql-server-ver16">Docs</a>
+  */
+ SQLRETURN SQL_API SQLMoreResults(SQLHSTMT statement_handle) {
++	try {
+ 	duckdb::OdbcHandleStmt *hstmt = nullptr;
+ 	SQLRETURN ret = ConvertHSTMT(statement_handle, hstmt);
+ 	if (ret != SQL_SUCCESS) {
+@@ -117,6 +145,14 @@ SQLRETURN SQL_API SQLMoreResults(SQLHSTMT statement_handle) {
+ 		return SQL_NO_DATA;
+ 	}
+ 	return duckdb::SingleExecuteStmt(hstmt);
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ //===--------------------------------------------------------------------===//
+@@ -124,6 +160,7 @@ SQLRETURN SQL_API SQLMoreResults(SQLHSTMT statement_handle) {
+ //===--------------------------------------------------------------------===//
+ 
+ SQLRETURN SQL_API SQLRowCount(SQLHSTMT statement_handle, SQLLEN *row_count_ptr) {
++	try {
+ 	duckdb::OdbcHandleStmt *hstmt = nullptr;
+ 	SQLRETURN ret = ConvertHSTMTResult(statement_handle, hstmt);
+ 	if (ret != SQL_SUCCESS) {
+@@ -147,4 +184,12 @@ SQLRETURN SQL_API SQLRowCount(SQLHSTMT statement_handle, SQLLEN *row_count_ptr)
+ 
+ 	// *row_count_ptr = -1; // we don't actually know most of the time
+ 	return SQL_SUCCESS;
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+diff --git a/src/odbc_api/statement_api.cpp b/src/odbc_api/statement_api.cpp
+index 49a34f17..85526fa2 100644
+--- a/src/odbc_api/statement_api.cpp
++++ b/src/odbc_api/statement_api.cpp
+@@ -35,7 +35,16 @@ static SQLRETURN PrepareInternal(SQLHSTMT statement_handle, SQLCHAR *statement_t
+  * href="https://learn.microsoft.com/en-us/sql/odbc/reference/syntax/sqlprepare-function?view=sql-server-ver16">Docs</a>
+  */
+ SQLRETURN SQL_API SQLPrepare(SQLHSTMT statement_handle, SQLCHAR *statement_text, SQLINTEGER text_length) {
++	try {
+ 	return PrepareInternal(statement_handle, statement_text, text_length);
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ /**
+@@ -44,8 +53,17 @@ SQLRETURN SQL_API SQLPrepare(SQLHSTMT statement_handle, SQLCHAR *statement_text,
+  * href="https://learn.microsoft.com/en-us/sql/odbc/reference/syntax/sqlprepare-function?view=sql-server-ver16">Docs</a>
+  */
+ SQLRETURN SQL_API SQLPrepareW(SQLHSTMT statement_handle, SQLWCHAR *statement_text, SQLINTEGER text_length) {
++	try {
+ 	auto statement_text_conv = duckdb::widechar::utf16_conv(statement_text, text_length);
+ 	return PrepareInternal(statement_handle, statement_text_conv.utf8_str, statement_text_conv.utf8_len_int());
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ //===--------------------------------------------------------------------===//
+@@ -57,6 +75,7 @@ SQLRETURN SQL_API SQLPrepareW(SQLHSTMT statement_handle, SQLWCHAR *statement_tex
+  * href="https://learn.microsoft.com/en-us/sql/odbc/reference/syntax/sqlexecute-function?view=sql-server-ver16">Docs</a>
+  */
+ SQLRETURN SQL_API SQLExecute(SQLHSTMT statement_handle) {
++	try {
+ 	duckdb::OdbcHandleStmt *hstmt = nullptr;
+ 	SQLRETURN ret = ConvertHSTMT(statement_handle, hstmt);
+ 	if (ret != SQL_SUCCESS) {
+@@ -64,6 +83,14 @@ SQLRETURN SQL_API SQLExecute(SQLHSTMT statement_handle) {
+ 	}
+ 
+ 	return duckdb::BatchExecuteStmt(hstmt);
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ //===--------------------------------------------------------------------===//
+@@ -86,7 +113,16 @@ static SQLRETURN ExecDirectInternal(SQLHSTMT statement_handle, SQLCHAR *statemen
+  * href="https://learn.microsoft.com/en-us/sql/odbc/reference/syntax/sqlexecdirect-function?view=sql-server-ver15">Docs</a>
+  */
+ SQLRETURN SQL_API SQLExecDirect(SQLHSTMT statement_handle, SQLCHAR *statement_text, SQLINTEGER text_length) {
++	try {
+ 	return ExecDirectInternal(statement_handle, statement_text, text_length);
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ /**
+@@ -95,8 +131,17 @@ SQLRETURN SQL_API SQLExecDirect(SQLHSTMT statement_handle, SQLCHAR *statement_te
+  * href="https://learn.microsoft.com/en-us/sql/odbc/reference/syntax/sqlexecdirect-function?view=sql-server-ver15">Docs</a>
+  */
+ SQLRETURN SQL_API SQLExecDirectW(SQLHSTMT statement_handle, SQLWCHAR *statement_text, SQLINTEGER text_length) {
++	try {
+ 	auto statement_text_conv = duckdb::widechar::utf16_conv(statement_text, text_length);
+ 	return ExecDirectInternal(statement_handle, statement_text_conv.utf8_str, statement_text_conv.utf8_len_int());
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+ 
+ //===--------------------------------------------------------------------===//
+@@ -108,6 +153,7 @@ SQLRETURN SQL_API SQLExecDirectW(SQLHSTMT statement_handle, SQLWCHAR *statement_
+  * href="https://learn.microsoft.com/en-us/sql/odbc/reference/syntax/sqlcancel-function?view=sql-server-ver16">Docs</a>
+  */
+ SQLRETURN SQL_API SQLCancel(SQLHSTMT statement_handle) {
++	try {
+ 	duckdb::OdbcHandleStmt *hstmt = nullptr;
+ 	SQLRETURN ret = ConvertHSTMT(statement_handle, hstmt);
+ 	if (ret != SQL_SUCCESS) {
+@@ -116,4 +162,12 @@ SQLRETURN SQL_API SQLCancel(SQLHSTMT statement_handle) {
+ 
+ 	hstmt->dbc->conn->Interrupt();
+ 	return SQL_SUCCESS;
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+diff --git a/src/odbc_api/transaction_api.cpp b/src/odbc_api/transaction_api.cpp
+index ccecea4e..333d4550 100644
+--- a/src/odbc_api/transaction_api.cpp
++++ b/src/odbc_api/transaction_api.cpp
+@@ -15,6 +15,7 @@ using duckdb::SQLStateType;
+  * href="https://learn.microsoft.com/en-us/sql/odbc/reference/syntax/sqlendtran-function?view=sql-server-ver15">Docs</a>
+  */
+ SQLRETURN SQL_API SQLEndTran(SQLSMALLINT handle_type, SQLHANDLE handle, SQLSMALLINT completion_type) {
++	try {
+ 	if (handle_type != SQL_HANDLE_DBC) { // theoretically this can also be done on env but no no no
+ 		return duckdb::SetDiagnosticRecord(static_cast<duckdb::OdbcHandle *>(handle), SQL_ERROR, "SQLEndTran",
+ 		                                   "Invalid handle type, must be SQL_HANDLE_DBC.", SQLStateType::ST_HY092, "");
+@@ -51,4 +52,12 @@ SQLRETURN SQL_API SQLEndTran(SQLSMALLINT handle_type, SQLHANDLE handle, SQLSMALL
+ 		return duckdb::SetDiagnosticRecord(dbc, SQL_ERROR, "SQLEndTran", "Invalid completion type.",
+ 		                                   SQLStateType::ST_HY012, dbc->GetDataSourceName());
+ 	}
++
++	} catch (duckdb::Exception &ex) {
++		return SQL_ERROR;
++	} catch (std::exception &ex) {
++		return SQL_ERROR;
++	} catch (...) {
++		return SQL_ERROR;
++	}
+ }
+diff --git a/src/odbc_driver/widechar/widechar.cpp b/src/odbc_driver/widechar/widechar.cpp
+index 6b2b2463..6e3f27c7 100644
+--- a/src/odbc_driver/widechar/widechar.cpp
++++ b/src/odbc_driver/widechar/widechar.cpp
+@@ -51,7 +51,11 @@ std::vector<SQLWCHAR> utf8_to_utf16_lenient(const SQLCHAR *in_buf, size_t in_buf
+ 	const SQLCHAR *first_invalid_found = utf8::find_invalid(in_buf, in_buf_end);
+ 
+ 	if (first_invalid_found == in_buf_end) {
+-		utf8::unchecked::utf8to16(in_buf, in_buf_end, res_bi);
++		if (sizeof(SQLWCHAR) == 4) {
++			utf8::unchecked::utf8to32(in_buf, in_buf_end, res_bi);
++		} else {
++			utf8::unchecked::utf8to16(in_buf, in_buf_end, res_bi);
++		}
+ 		if (first_invalid_char != nullptr) {
+ 			*first_invalid_char = nullptr;
+ 		}
+@@ -59,7 +63,11 @@ std::vector<SQLWCHAR> utf8_to_utf16_lenient(const SQLCHAR *in_buf, size_t in_buf
+ 		std::vector<SQLCHAR> replaced;
+ 		auto replaced_bi = std::back_inserter(replaced);
+ 		utf8::replace_invalid(in_buf, in_buf_end, replaced_bi, invalid_char_replacement);
+-		utf8::unchecked::utf8to16(replaced.begin(), replaced.end(), res_bi);
++		if (sizeof(SQLWCHAR) == 4) {
++			utf8::unchecked::utf8to32(replaced.begin(), replaced.end(), res_bi);
++		} else {
++			utf8::unchecked::utf8to16(replaced.begin(), replaced.end(), res_bi);
++		}
+ 		if (first_invalid_char != nullptr) {
+ 			*first_invalid_char = first_invalid_found;
+ 		}

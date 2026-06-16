@@ -119,6 +119,7 @@ jobs:
           fi
           git clone https://github.com/duckdb/duckdb-odbc.git build/duckdb-odbc
           cd build/duckdb-odbc
+          patch -p1 < ../../mac_odbc_fixes.patch
           cat << 'EOF' > patch_static.py
           import os
           workspace = os.path.abspath("../..")
