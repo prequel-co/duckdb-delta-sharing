@@ -129,10 +129,20 @@ jobs:
           
           f='CMakeLists.txt'
           c=open(f).read()
+          c=c.replace('cmake_minimum_required(VERSION 3.5...3.29)', 'cmake_minimum_required(VERSION 3.12...3.29)')
+          fetch_block = """
+include(FetchContent)
+FetchContent_Declare(nlohmann_json URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz)
+FetchContent_MakeAvailable(nlohmann_json)
+FetchContent_Declare(roaring GIT_REPOSITORY https://github.com/RoaringBitmap/CRoaring.git GIT_TAG v4.6.1)
+FetchContent_MakeAvailable(roaring)
+"""
+          c=c.replace('add_subdirectory(src)', fetch_block + '\nadd_subdirectory(src)')
           c=c.replace('else()', 'elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")')
           c=c.replace('-DNO_FRAMEWORKS', '-DNO_FRAMEWORKS -DSQL_ATTR_ASYNC_DBC_FUNCTIONS_ENABLE=117 -DSQL_ASYNC_DBC_FUNCTIONS=10023 -DSQL_ASYNC_DBC_NOT_CAPABLE=0')
           c=c.replace('add_subdirectory(test)', '')
-          c=c.replace('add_library(duckdb_core_obj OBJECT ${CORE_OBJECT_FILES})', f'include_directories({inc_dir})\nadd_library(duckdb_core_obj OBJECT ' + '${CORE_OBJECT_FILES}' + f' {ext_src})')
+          c=c.replace('add_library(duckdb_core_obj OBJECT ${CORE_OBJECT_FILES})', f'include_directories({inc_dir})\nadd_library(duckdb_core_obj OBJECT ' + '${CORE_OBJECT_FILES}' + f' {ext_src})\ntarget_link_libraries(duckdb_core_obj PRIVATE roaring nlohmann_json::nlohmann_json)')
+          c=c.replace('target_link_libraries(duckdb_odbc ${LINK_LIB_LIST} )', 'target_link_libraries(duckdb_odbc ${LINK_LIB_LIST} roaring nlohmann_json::nlohmann_json)')
           open(f,'w').write(c)
 
           f2='src/duckdb/generated_extension_loader_package_build.cpp'
