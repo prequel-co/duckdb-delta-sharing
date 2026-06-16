@@ -130,7 +130,7 @@ jobs:
           f='CMakeLists.txt'
           c=open(f).read()
           c=c.replace('cmake_minimum_required(VERSION 3.5...3.29)', 'cmake_minimum_required(VERSION 3.12...3.29)')
-          fetch_block = "include(FetchContent)\\nFetchContent_Declare(nlohmann_json URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz)\\nFetchContent_MakeAvailable(nlohmann_json)\\nFetchContent_Declare(roaring GIT_REPOSITORY https://github.com/RoaringBitmap/CRoaring.git GIT_TAG v4.6.1)\\nFetchContent_MakeAvailable(roaring)\\n"
+          fetch_block = "include(FetchContent)\nFetchContent_Declare(nlohmann_json URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz)\nFetchContent_MakeAvailable(nlohmann_json)\nFetchContent_Declare(roaring GIT_REPOSITORY https://github.com/RoaringBitmap/CRoaring.git GIT_TAG v4.6.1)\nFetchContent_MakeAvailable(roaring)\n"
           c=c.replace('add_subdirectory(src)', fetch_block + '\nadd_subdirectory(src)')
           c=c.replace('else()', 'elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")')
           c=c.replace('-DNO_FRAMEWORKS', '-DNO_FRAMEWORKS -DSQL_ATTR_ASYNC_DBC_FUNCTIONS_ENABLE=117 -DSQL_ASYNC_DBC_FUNCTIONS=10023 -DSQL_ASYNC_DBC_NOT_CAPABLE=0')
