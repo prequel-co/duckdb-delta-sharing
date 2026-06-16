@@ -119,8 +119,30 @@ jobs:
           fi
           git clone https://github.com/duckdb/duckdb-odbc.git build/duckdb-odbc
           cd build/duckdb-odbc
-          python3 -c "f='CMakeLists.txt.in'; c=open(f).read(); c=c.replace('else()', 'elseif(CMAKE_SYSTEM_NAME STREQUAL \"Linux\")'); c=c.replace('-DNO_FRAMEWORKS', '-DNO_FRAMEWORKS -DSQL_ATTR_ASYNC_DBC_FUNCTIONS_ENABLE=117 -DSQL_ASYNC_DBC_FUNCTIONS=10023 -DSQL_ASYNC_DBC_NOT_CAPABLE=0'); c=c.replace('add_subdirectory(test)', ''); open(f,'w').write(c)"
+          cat << 'EOF' > patch_static.py
+          import os
+          workspace = os.path.abspath("../..")
+          src_files = [os.path.join(workspace, "src", f) for f in ["delta_share_multi_file_reader.cpp", "delta_sharing_client.cpp", "delta_sharing_json.cpp", "duckdb_delta_sharing_extension.cpp", "duckdb_delta_sharing_functions.cpp"]]
+          ext_src = " " + " ".join(src_files)
+          inc_dir = os.path.join(workspace, "src", "include")
+          
+          f='CMakeLists.txt.in'
+          c=open(f).read()
+          c=c.replace('else()', 'elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")')
+          c=c.replace('-DNO_FRAMEWORKS', '-DNO_FRAMEWORKS -DSQL_ATTR_ASYNC_DBC_FUNCTIONS_ENABLE=117 -DSQL_ASYNC_DBC_FUNCTIONS=10023 -DSQL_ASYNC_DBC_NOT_CAPABLE=0')
+          c=c.replace('add_subdirectory(test)', '')
+          c=c.replace('add_library(duckdb_core_obj OBJECT ${ALL_OBJECT_FILES})', f'include_directories({inc_dir})\nadd_library(duckdb_core_obj OBJECT ${{ALL_OBJECT_FILES}} {ext_src})')
+          open(f,'w').write(c)
+
+          f2='src/duckdb/generated_extension_loader_package_build.cpp'
+          c2=open(f2).read()
+          c2=c2.replace('#include "duckdb/main/extension/generated_extension_loader.hpp"', f'#include "{inc_dir}/duckdb_delta_sharing_extension.hpp"\n#include "duckdb/main/extension/generated_extension_loader.hpp"')
+          c2=c2.replace('return ExtensionLoadResult::NOT_LOADED;', '    if (extension=="duckdb_delta_sharing") {\n        db.LoadStaticExtension<DuckdbDeltaSharingExtension>();\n        return ExtensionLoadResult::LOADED_EXTENSION;\n    }\n    return ExtensionLoadResult::NOT_LOADED;')
+          c2=c2.replace('};', '        "duckdb_delta_sharing",\n    };')
+          open(f2,'w').write(c2)
+          EOF
           python3 vendor.py --duckdb ../../duckdb
+          python3 patch_static.py
           mkdir -p build/release
           cd build/release
           cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=${{ (matrix.arch == 'osx_amd64' && 'x86_64') || (matrix.arch == 'osx_arm64' && 'arm64') || '' }} ../..
