@@ -10,7 +10,12 @@ namespace duckdb {
 struct ListBindData : public TableFunctionData {
     JsonValue items;  // Store items as JSON array
     idx_t current_idx = 0;
-    int list_type; // 0=shares, 1=schemas, 2=tables
+    int list_type; // 0=shares, 1=schemas, 2=tables, 3=columns
+
+    // list_type == 3 (columns): per-column metadata parsed from a table's schemaString
+    vector<string> col_names;
+    vector<string> col_types;     // LogicalType::ToString()
+    vector<bool>   col_nullables;
 };
 
 

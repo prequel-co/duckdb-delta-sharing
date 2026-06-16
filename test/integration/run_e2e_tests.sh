@@ -98,6 +98,56 @@ SELECT * FROM delta_share_read('${SHARE}', '${SCHEMA}', 'master_table') LIMIT 5;
 $DUCKDB_PATH -unsigned -c "$QUERY_MASTER_TABLE"
 
 echo ""
+echo "Testing delta_share_list_all_tables..."
+echo "---------------------------------------------------------"
+
+QUERY_ALL_TABLES="
+LOAD '${EXT_PATH}';
+LOAD httpfs;
+CREATE SECRET (TYPE delta_sharing, PROVIDER config, ENDPOINT '${DB_ENDPOINT}', BEARER_TOKEN '${DB_TOKEN}');
+
+SELECT name, schema, share FROM delta_share_list_all_tables('${SHARE}') ORDER BY name;
+"
+ALL_TABLES=$($DUCKDB_PATH -unsigned -c "$QUERY_ALL_TABLES")
+echo "$ALL_TABLES"
+
+if ! echo "$ALL_TABLES" | grep -q "orders"; then
+    echo "ERROR: delta_share_list_all_tables did not return the 'orders' table!"
+    exit 1
+fi
+
+echo ""
+echo "Testing arity-3 delta_share_list (column metadata)..."
+echo "---------------------------------------------------------"
+
+QUERY_COLUMNS="
+LOAD '${EXT_PATH}';
+LOAD httpfs;
+CREATE SECRET (TYPE delta_sharing, PROVIDER config, ENDPOINT '${DB_ENDPOINT}', BEARER_TOKEN '${DB_TOKEN}');
+
+SELECT column_name, column_type, is_nullable, ordinal_position
+FROM delta_share_list('${SHARE}', '${SCHEMA}', 'orders')
+ORDER BY ordinal_position;
+"
+COLUMNS=$($DUCKDB_PATH -unsigned -c "$QUERY_COLUMNS")
+echo "$COLUMNS"
+
+if echo "$COLUMNS" | grep -q "col-"; then
+    echo "ERROR: arity-3 delta_share_list leaked physical column names!"
+    exit 1
+fi
+
+if ! echo "$COLUMNS" | grep -q "order_payment_method"; then
+    echo "ERROR: arity-3 delta_share_list missing logical column 'order_payment_method'!"
+    exit 1
+fi
+
+if ! echo "$COLUMNS" | grep -qE '(true|false)'; then
+    echo "ERROR: arity-3 delta_share_list emitted no boolean is_nullable values!"
+    exit 1
+fi
+
+echo ""
 echo "Testing Time Travel with delta_share_read..."
 echo "---------------------------------------------------------"
 

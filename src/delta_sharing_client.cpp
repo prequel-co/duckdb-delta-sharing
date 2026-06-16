@@ -357,14 +357,16 @@ DeltaSharingClient::TableMetadataResponse DeltaSharingClient::QueryTableMetadata
             throw SerializationException("QueryTableMetadata error: malformed response body from server.");
         }
 
-        // First line: protocol - get internal json object
+        // First line: protocol (responseformat=delta wraps it under "deltaProtocol")
         auto* line0_json = static_cast<json*>(lines[0].GetInternalPtr());
-        auto &protocol_obj = line0_json->at("protocol");
+        auto &protocol_top = line0_json->at("protocol");
+        const json &protocol_obj = protocol_top.contains("deltaProtocol") ? protocol_top.at("deltaProtocol") : protocol_top;
         result.protocol.min_reader_version = protocol_obj.at("minReaderVersion").get<int>();
 
-        // Second line: metadata
+        // Second line: metadata (responseformat=delta wraps it under "deltaMetadata")
         auto* line1_json = static_cast<json*>(lines[1].GetInternalPtr());
-        auto &metadata_obj = line1_json->at("metaData");
+        auto &metadata_top = line1_json->at("metaData");
+        const json &metadata_obj = metadata_top.contains("deltaMetadata") ? metadata_top.at("deltaMetadata") : metadata_top;
         result.metadata.id = metadata_obj.at("id").get<std::string>();
         result.metadata.name = metadata_obj.value("name", "");
         result.metadata.description = metadata_obj.value("description", "");
@@ -879,6 +881,11 @@ static LogicalType ParseSparkType(const json &type_json) {
 }
 
 void DeltaSharingClient::ParseSparkSchema(const std::string &schema_string, vector<LogicalType> &return_types, vector<string> &names, vector<string> &physical_names) {
+    vector<bool> nullables;
+    ParseSparkSchema(schema_string, return_types, names, physical_names, nullables);
+}
+
+void DeltaSharingClient::ParseSparkSchema(const std::string &schema_string, vector<LogicalType> &return_types, vector<string> &names, vector<string> &physical_names, vector<bool> &nullables) {
     try {
         if (schema_string.empty()) return;
 
@@ -886,6 +893,13 @@ void DeltaSharingClient::ParseSparkSchema(const std::string &schema_string, vect
         if (!schema_json.contains("fields") || !schema_json.at("fields").is_array()) {
             return;
         }
+
+        // Accumulate into temporaries and commit only after the whole schema parses,
+        // to prevent a silent partial schema.
+        vector<LogicalType> tmp_types;
+        vector<string> tmp_names;
+        vector<string> tmp_physical_names;
+        vector<bool> tmp_nullables;
 
         auto &fields = schema_json.at("fields");
         for (auto &field : fields) {
@@ -900,12 +914,19 @@ void DeltaSharingClient::ParseSparkSchema(const std::string &schema_string, vect
             }
 
             LogicalType parsed_type = ParseSparkType(field.at("type"));
-            names.push_back(name);
-            physical_names.push_back(physical_name);
-            return_types.push_back(parsed_type);
+            bool nullable = field.contains("nullable") ? field.at("nullable").get<bool>() : true;
+            tmp_names.push_back(name);
+            tmp_physical_names.push_back(physical_name);
+            tmp_types.push_back(parsed_type);
+            tmp_nullables.push_back(nullable);
         }
+
+        return_types.insert(return_types.end(), tmp_types.begin(), tmp_types.end());
+        names.insert(names.end(), tmp_names.begin(), tmp_names.end());
+        physical_names.insert(physical_names.end(), tmp_physical_names.begin(), tmp_physical_names.end());
+        nullables.insert(nullables.end(), tmp_nullables.begin(), tmp_nullables.end());
     } catch (...) {
-        // Fallback: names/types will stay as they were (likely empty)
+        // Parse failed: leave caller vectors untouched (the column-listing path treats empty as an error)
     }
 }
 
