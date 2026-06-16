@@ -127,12 +127,12 @@ jobs:
           ext_src = " " + " ".join(src_files)
           inc_dir = os.path.join(workspace, "src", "include")
           
-          f='CMakeLists.txt.in'
+          f='CMakeLists.txt'
           c=open(f).read()
           c=c.replace('else()', 'elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")')
           c=c.replace('-DNO_FRAMEWORKS', '-DNO_FRAMEWORKS -DSQL_ATTR_ASYNC_DBC_FUNCTIONS_ENABLE=117 -DSQL_ASYNC_DBC_FUNCTIONS=10023 -DSQL_ASYNC_DBC_NOT_CAPABLE=0')
           c=c.replace('add_subdirectory(test)', '')
-          c=c.replace('add_library(duckdb_core_obj OBJECT ${ALL_OBJECT_FILES})', f'include_directories({inc_dir})\nadd_library(duckdb_core_obj OBJECT ' + '${ALL_OBJECT_FILES}' + f' {ext_src})')
+          c=c.replace('add_library(duckdb_core_obj OBJECT ${CORE_OBJECT_FILES})', f'include_directories({inc_dir})\nadd_library(duckdb_core_obj OBJECT ' + '${CORE_OBJECT_FILES}' + f' {ext_src})')
           open(f,'w').write(c)
 
           f2='src/duckdb/generated_extension_loader_package_build.cpp'
