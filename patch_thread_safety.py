@@ -27,7 +27,7 @@ struct ApiGuard {
     }
 };
 """
-    c = c.replace('enum OdbcHandleType', guard_code + '\nenum OdbcHandleType')
+    c = c.replace('} // namespace duckdb', guard_code + '\n} // namespace duckdb')
     with open(f_hpp, 'w') as f:
         f.write(c)
 
