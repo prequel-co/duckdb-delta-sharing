@@ -151,6 +151,7 @@ jobs:
           python3 patch_static.py
           python3 ../../patch_thread_safety.py
           python3 ../../patch_widechar.py
+          python3 ../../patch_fetch_buffer.py
           mkdir -p build/release
           cd build/release
           cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=${{ (matrix.arch == 'osx_amd64' && 'x86_64') || (matrix.arch == 'osx_arm64' && 'arm64') || '' }} ../..
@@ -185,6 +186,7 @@ jobs:
           python -c "f='src/odbc_driver/common/file_io.cpp'; c=open(f).read(); open(f,'w').write(c.replace('file.open(wpath,', 'file.open(wpath.c_str(),'))"
           python ../../patch_thread_safety.py
           python ../../patch_widechar.py
+          python ../../patch_fetch_buffer.py
           mkdir -p build/release
           cd build/release
           cmake -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" ../..
