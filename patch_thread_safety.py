@@ -77,30 +77,30 @@ for root, dirs, files in os.walk(api_dir):
             with open(path, 'r') as f:
                 content = f.read()
             
-            # Replace ConvertHSTMT
+            # Replace ConvertHSTMT (with optional const)
             content = re.sub(
-                r'(SQLRETURN\s+ret\s*=\s*ConvertHSTMT\w*\([^,]+,\s*([a-zA-Z0-9_]+)\);[\s\n]*if\s*\([^\{]+\{[\s\n]*return[^;]+;[\s\n]*\})',
+                r'((?:const\s+)?SQLRETURN\s+ret\s*=\s*ConvertHSTMT\w*\([^,]+,\s*([a-zA-Z0-9_]+)\);[\s\n]*if\s*\([^\{]+\{[\s\n]*return[^;]+;[\s\n]*\})',
                 r'\1\n\tduckdb::ApiGuard guard(\2);\n\tif (\2 && \2->is_deleted) return SQL_INVALID_HANDLE;',
                 content
             )
 
-            # ConvertConnection
+            # ConvertConnection (with optional const)
             content = re.sub(
-                r'(SQLRETURN\s+ret\s*=\s*ConvertConnection\w*\([^,]+,\s*([a-zA-Z0-9_]+)\);[\s\n]*if\s*\([^\{]+\{[\s\n]*return[^;]+;[\s\n]*\})',
+                r'((?:const\s+)?SQLRETURN\s+ret\s*=\s*ConvertConnection\w*\([^,]+,\s*([a-zA-Z0-9_]+)\);[\s\n]*if\s*\([^\{]+\{[\s\n]*return[^;]+;[\s\n]*\})',
                 r'\1\n\tduckdb::ApiGuard guard(\2);\n\tif (\2 && \2->is_deleted) return SQL_INVALID_HANDLE;',
                 content
             )
 
-            # ConvertEnvironment
+            # ConvertEnvironment (with optional const)
             content = re.sub(
-                r'(SQLRETURN\s+ret\s*=\s*ConvertEnvironment\w*\([^,]+,\s*([a-zA-Z0-9_]+)\);[\s\n]*if\s*\([^\{]+\{[\s\n]*return[^;]+;[\s\n]*\})',
+                r'((?:const\s+)?SQLRETURN\s+ret\s*=\s*ConvertEnvironment\w*\([^,]+,\s*([a-zA-Z0-9_]+)\);[\s\n]*if\s*\([^\{]+\{[\s\n]*return[^;]+;[\s\n]*\})',
                 r'\1\n\tduckdb::ApiGuard guard(\2);\n\tif (\2 && \2->is_deleted) return SQL_INVALID_HANDLE;',
                 content
             )
 
-            # const SQLRETURN ret = ConvertHSTMT
+            # ConvertHandle (since NativeSQLInternal uses it)
             content = re.sub(
-                r'(const\s+SQLRETURN\s+ret\s*=\s*ConvertHSTMT\w*\([^,]+,\s*([a-zA-Z0-9_]+)\);[\s\n]*if\s*\([^\{]+\{[\s\n]*return[^;]+;[\s\n]*\})',
+                r'((?:const\s+)?(?:auto|SQLRETURN)\s+ret\s*=\s*ConvertHandle\w*\([^,]+,\s*([a-zA-Z0-9_]+)\);[\s\n]*if\s*\([^\{]+\{[\s\n]*return[^;]+;[\s\n]*\})',
                 r'\1\n\tduckdb::ApiGuard guard(\2);\n\tif (\2 && \2->is_deleted) return SQL_INVALID_HANDLE;',
                 content
             )
