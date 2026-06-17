@@ -119,6 +119,7 @@ jobs:
           fi
           git clone https://github.com/duckdb/duckdb-odbc.git build/duckdb-odbc
           cd build/duckdb-odbc
+          git checkout 1abb7cbf  # pin: last duckdb-odbc ref before jemalloc (#455) broke the macOS/Windows ODBC build
           python3 vendor.py --duckdb ../../duckdb
           mkdir -p build/release
           cd build/release
@@ -131,6 +132,7 @@ jobs:
         run: |
           git clone https://github.com/duckdb/duckdb-odbc.git build/duckdb-odbc
           cd build/duckdb-odbc
+          git checkout 1abb7cbf  # pin: last duckdb-odbc ref before jemalloc (#455) broke the macOS/Windows ODBC build
           cat << 'EOF' > patch.py
           import os
           f='CMakeLists.txt.in'
