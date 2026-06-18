@@ -1,5 +1,12 @@
 import os
 
+'''
+SUMMARY:
+This patch script fixes a massive buffer overflow during bulk ODBC fetch calls. 
+DuckDB previously used the absolute chunk index (`row_idx`) instead of the relative fetch index (`rows_fetched`) when populating the host application's bound buffers (e.g. `StrLen_or_IndPtr`).
+This properly re-maps all pointer offsets to use the relative `rows_fetched` index.
+'''
+
 def patch_fetch_offset():
     f_fetch = 'src/odbc_driver/common/odbc_fetch.cpp'
     with open(f_fetch, 'r') as f:

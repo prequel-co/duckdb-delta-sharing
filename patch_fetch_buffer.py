@@ -1,5 +1,12 @@
 import os
 
+'''
+SUMMARY:
+This patch script fixes two bugs in DuckDB's ODBC driver bulk fetch logic:
+1. It patches a signed/unsigned comparison underflow (`buffer_length < sizeof(CHAR_TYPE)`) which was causing buffer checks to fail when dealing with SQL_NTS.
+2. It correctly aligns truncated string buffer boundaries during fetch to avoid unaligned null-terminator writes. This prevents out-of-bounds scanning and heap corruption in iODBC (macOS).
+'''
+
 def patch_fetch_buffer():
     f_stmt = 'src/odbc_driver/statement/statement_functions.cpp'
     with open(f_stmt, 'r') as f:

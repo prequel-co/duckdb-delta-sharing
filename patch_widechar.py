@@ -1,5 +1,12 @@
 import os
 
+'''
+SUMMARY:
+This patch script corrects the UTF-16 vs UTF-32 conversion logic in DuckDB's wide string API.
+DuckDB assumes `SQLWCHAR` is 2 bytes (UTF-16) based on unixODBC, but iODBC on macOS expects `SQLWCHAR` to be 4 bytes (UTF-32).
+This intercepts widechar casts to use `utf32to8` and `utf8to32` depending dynamically on `sizeof(SQLWCHAR)`.
+'''
+
 def patch_widechar():
     f_utils = 'src/odbc_driver/common/odbc_utils.cpp'
     with open(f_utils, 'r') as f:

@@ -5,6 +5,8 @@
 #include <nlohmann/json.hpp>
 #include "duckdb/main/secret/secret.hpp"
 #include "duckdb/main/secret/secret_manager.hpp"
+// WebAssembly (Emscripten) bypasses libcurl because standard socket-based networking is unsupported in browsers.
+// Instead, it uses the native browser fetch API via emscripten/fetch.h
 #ifndef __EMSCRIPTEN__
 #include <curl/curl.h>
 #else
@@ -194,6 +196,8 @@ HttpResponse DeltaSharingClient::PerformRequest(
     std::string response_body;
 
 #ifdef __EMSCRIPTEN__
+    // Emscripten WASM builds use emscripten_fetch to execute asynchronous HTTP requests synchronously
+    // without blocking the main browser thread via Asyncify/JS interop.
     emscripten_fetch_attr_t attr;
     emscripten_fetch_attr_init(&attr);
     strcpy(attr.requestMethod, method.c_str());

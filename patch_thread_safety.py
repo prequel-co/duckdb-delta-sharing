@@ -1,5 +1,12 @@
 import os, re
 
+'''
+SUMMARY:
+This patch script implements asynchronous, non-blocking ODBC handle teardown.
+Previously, `duckdb::FreeHandle` would block the Main UI Thread (`std::this_thread::yield()`) waiting for background TaskScheduler threads to finish fetching data, causing `SIG_HANG_QUIT` deadlocks in Mac Excel.
+We inject an `ApiGuard` with recursive reference counting that acts as a garbage collector, deferring `FreeHandleMemory` cleanup until all background operations cleanly abort without blocking the host app.
+'''
+
 # 1. Patch duckdb_odbc.hpp
 f_hpp = 'include/duckdb_odbc.hpp'
 with open(f_hpp, 'r') as f:

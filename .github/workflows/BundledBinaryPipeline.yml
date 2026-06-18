@@ -183,8 +183,8 @@ jobs:
           
           rm -rf src/duckdb
           python -c "f='../../duckdb/scripts/package_build.py'; c=open(f).read(); open(f,'w').write(c.replace('os.mkdir(current_path)', 'os.makedirs(current_path, exist_ok=True)'))"
+          python -c "f='vendor.py'; c=open(f).read(); open(f,'w').write(c.replace('source_list.sort()', 'source_list = [x.replace(chr(92), \'/\') for x in source_list]\\nsource_list.sort()').replace('jemalloc_source_list.sort()', 'jemalloc_source_list = [x.replace(chr(92), \'/\') for x in jemalloc_source_list]\\njemalloc_source_list.sort()').replace('include_list.sort()', 'include_list = [x.replace(chr(92), \'/\') for x in include_list]\\ninclude_list.sort()').replace('jemalloc_include_list.sort()', 'jemalloc_include_list = [x.replace(chr(92), \'/\') for x in jemalloc_include_list]\\njemalloc_include_list.sort()'))"
           python vendor.py --duckdb ../../duckdb
-          python -c "f='CMakeLists.txt'; c=open(f).read(); open(f,'w').write(c.replace(chr(92), '/'))"
           python -c "f='src/odbc_driver/common/file_io.cpp'; c=open(f).read(); open(f,'w').write(c.replace('file.open(wpath,', 'file.open(wpath.c_str(),'))"
           python ../../patch_thread_safety.py
           python ../../patch_widechar.py
