@@ -119,6 +119,7 @@ jobs:
           fi
           git clone https://github.com/duckdb/duckdb-odbc.git build/duckdb-odbc
           cd build/duckdb-odbc
+          git checkout c816687b
           patch -p1 < ../../mac_odbc_fixes.patch
           cat << 'EOF' > patch_static.py
           import os
@@ -164,6 +165,7 @@ jobs:
         run: |
           git clone https://github.com/duckdb/duckdb-odbc.git build/duckdb-odbc
           cd build/duckdb-odbc
+          git checkout c816687b
           cat << 'EOF' > patch.py
           import os
           f='CMakeLists.txt.in'
