@@ -62,7 +62,6 @@ void duckdb::FreeHandleMemory(OdbcHandle *handle) {
 \tswitch (handle->type) {
 \tcase OdbcHandleType::DBC: {
 \t\tauto *hdl = static_cast<duckdb::OdbcHandleDbc *>(handle);
-\t\tif (hdl && hdl->env) hdl->env->EraseConnectionRef(hdl);
 \t\tdelete hdl;
 \t\tbreak;
 \t}
