@@ -13,18 +13,37 @@ if 'std::atomic<int> active_calls' not in c:
 
     # Add ApiGuard to duckdb namespace
     guard_code = """
+void FreeHandleMemory(OdbcHandle *handle);
+
 struct ApiGuard {
     OdbcHandle *handle;
     ApiGuard(OdbcHandle *h) : handle(h) {
-        if (handle) {
-            handle->active_calls++;
+        if (!handle) return;
+        auto *curr = handle;
+        while (curr) {
+            curr->active_calls++;
+            if (curr->type == OdbcHandleType::STMT) curr = static_cast<OdbcHandleStmt *>(curr)->dbc;
+            else if (curr->type == OdbcHandleType::DESC) curr = static_cast<OdbcHandleDesc *>(curr)->dbc;
+            else if (curr->type == OdbcHandleType::DBC) curr = static_cast<OdbcHandleDbc *>(curr)->env;
+            else curr = nullptr;
         }
     }
     ~ApiGuard() {
-        if (handle) {
-            handle->active_calls--;
+        if (!handle) return;
+        auto *curr = handle;
+        while (curr) {
+            OdbcHandle *parent = nullptr;
+            if (curr->type == OdbcHandleType::STMT) parent = static_cast<OdbcHandleStmt *>(curr)->dbc;
+            else if (curr->type == OdbcHandleType::DESC) parent = static_cast<OdbcHandleDesc *>(curr)->dbc;
+            else if (curr->type == OdbcHandleType::DBC) parent = static_cast<OdbcHandleDbc *>(curr)->env;
+            
+            if (--curr->active_calls == 0 && curr->is_deleted.load()) {
+                FreeHandleMemory(curr);
+            }
+            curr = parent;
         }
     }
+    bool IsValid() { return handle && !handle->is_deleted.load(); }
 };
 """
     c = c.replace('} // namespace duckdb', guard_code + '\n} // namespace duckdb')
@@ -36,35 +55,70 @@ f_driver = 'src/odbc_driver/driver.cpp'
 with open(f_driver, 'r') as f:
     c = f.read()
 
-if 'base_handle->is_deleted = true;' not in c:
+if 'void duckdb::FreeHandleMemory' not in c:
     free_handle_replacement = """
+void duckdb::FreeHandleMemory(OdbcHandle *handle) {
+\tif (!handle) return;
+\tswitch (handle->type) {
+\tcase OdbcHandleType::DBC: {
+\t\tauto *hdl = static_cast<duckdb::OdbcHandleDbc *>(handle);
+\t\tif (hdl && hdl->env) hdl->env->EraseConnectionRef(hdl);
+\t\tdelete hdl;
+\t\tbreak;
+\t}
+\tcase OdbcHandleType::DESC: {
+\t\tauto *hdl = static_cast<duckdb::OdbcHandleDesc *>(handle);
+\t\tif (hdl->dbc) hdl->dbc->ResetStmtDescriptors(hdl);
+\t\tdelete hdl;
+\t\tbreak;
+\t}
+\tcase OdbcHandleType::ENV: {
+\t\tauto *hdl = static_cast<duckdb::OdbcHandleEnv *>(handle);
+\t\tdelete hdl;
+\t\tbreak;
+\t}
+\tcase OdbcHandleType::STMT: {
+\t\tauto *hdl = static_cast<duckdb::OdbcHandleStmt *>(handle);
+\t\tif (hdl && hdl->dbc) hdl->dbc->EraseStmtRef(hdl);
+\t\tdelete hdl;
+\t\tbreak;
+\t}
+\t}
+}
+
 SQLRETURN duckdb::FreeHandle(SQLSMALLINT handle_type, SQLHANDLE handle) {
 \tif (!handle) {
 \t\treturn SQL_INVALID_HANDLE;
 \t}
 
 \tauto *base_handle = static_cast<duckdb::OdbcHandle *>(handle);
-\tbase_handle->is_deleted = true;
+\t
+\t{
+\t\tduckdb::ApiGuard guard(base_handle);
+\t\tbase_handle->is_deleted = true;
 
-\tif (handle_type == SQL_HANDLE_STMT) {
-\t\tauto *hstmt = static_cast<duckdb::OdbcHandleStmt *>(handle);
-\t\tif (hstmt->dbc && hstmt->dbc->conn) {
-\t\t\thstmt->dbc->conn->Interrupt();
-\t\t}
-\t} else if (handle_type == SQL_HANDLE_DBC) {
-\t\tauto *dbc = static_cast<duckdb::OdbcHandleDbc *>(handle);
-\t\tif (dbc->conn) {
-\t\t\tdbc->conn->Interrupt();
+\t\tif (handle_type == SQL_HANDLE_STMT) {
+\t\t\tauto *hstmt = static_cast<duckdb::OdbcHandleStmt *>(handle);
+\t\t\tif (hstmt->dbc && hstmt->dbc->conn) {
+\t\t\t\thstmt->dbc->conn->Interrupt();
+\t\t\t}
+\t\t} else if (handle_type == SQL_HANDLE_DBC) {
+\t\t\tauto *dbc = static_cast<duckdb::OdbcHandleDbc *>(handle);
+\t\t\tif (dbc->conn) {
+\t\t\t\tdbc->conn->Interrupt();
+\t\t\t}
 \t\t}
 \t}
 
-\twhile (base_handle->active_calls > 0) {
-\t\tstd::this_thread::yield();
-\t}
-
-\tswitch (handle_type) {
+\treturn SQL_SUCCESS;
+}
 """
-    c = c.replace('SQLRETURN duckdb::FreeHandle(SQLSMALLINT handle_type, SQLHANDLE handle) {\n\tif (!handle) {\n\t\treturn SQL_INVALID_HANDLE;\n\t}\n\n\tswitch (handle_type) {', free_handle_replacement)
+    # Replace the existing FreeHandle entirely
+    c = re.sub(
+        r'SQLRETURN\s+duckdb::FreeHandle\([^\{]+\{[\s\S]*?return\s+SQL_INVALID_HANDLE;\s*\}[\s\n]*\}',
+        free_handle_replacement,
+        c
+    )
     with open(f_driver, 'w') as f:
         f.write(c)
 
@@ -107,4 +161,3 @@ for root, dirs, files in os.walk(api_dir):
 
             with open(path, 'w') as f:
                 f.write(content)
-
