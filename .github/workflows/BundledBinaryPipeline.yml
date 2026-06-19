@@ -204,11 +204,11 @@ jobs:
         shell: bash
         run: |
           mkdir -p gar_artifacts
-          cp build/release/duckdb gar_artifacts/ 2>/dev/null || true
-          cp build/release/duckdb.exe gar_artifacts/ 2>/dev/null || true
-          cp build/duckdb-odbc/build/release/libduckdb_odbc.dylib gar_artifacts/ 2>/dev/null || true
-          cp build/duckdb-odbc/build/release/duckdb_odbc.dll gar_artifacts/ 2>/dev/null || true
-          cp build/duckdb-odbc/build/release/duckdb_odbc.lib gar_artifacts/ 2>/dev/null || true
+          find build -name "duckdb" -type f -exec cp {} gar_artifacts/ \; 2>/dev/null || true
+          find build -name "duckdb.exe" -type f -exec cp {} gar_artifacts/ \; 2>/dev/null || true
+          find build -name "libduckdb_odbc.dylib" -type f -exec cp {} gar_artifacts/ \; 2>/dev/null || true
+          find build -name "duckdb_odbc.dll" -type f -exec cp {} gar_artifacts/ \; 2>/dev/null || true
+          find build -name "duckdb_odbc.lib" -type f -exec cp {} gar_artifacts/ \; 2>/dev/null || true
           cd gar_artifacts
           tar -czf ../duckdb-${{ matrix.arch }}.tar.gz .
 
