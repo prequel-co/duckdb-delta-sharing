@@ -203,7 +203,7 @@ jobs:
       - name: Compress Artifacts
         shell: bash
         run: |
-          python -c "import os, shutil, tarfile; os.makedirs('gar_artifacts', exist_ok=True); targets={'duckdb', 'duckdb.exe', 'libduckdb_odbc.dylib', 'duckdb_odbc.dll', 'duckdb_odbc.lib', 'libduckdb_odbc.so'}; [shutil.copy(os.path.join(r, f), 'gar_artifacts/') for r, d, files in os.walk('build') for f in files if f in targets]; os.chdir('gar_artifacts'); tar=tarfile.open('../duckdb-${{ matrix.arch }}.tar.gz', 'w:gz'); [tar.add(f) for f in os.listdir('.')]; tar.close()"
+          python -c "import os, shutil, tarfile; os.makedirs('gar_artifacts', exist_ok=True); valid_exts = {'.exe', '.dll', '.dylib', '.so', '.lib', '.a'}; [shutil.copy(os.path.join(r, f), 'gar_artifacts/') for r, d, files in os.walk('build') for f in files if ('duckdb' in f and any(f.endswith(ext) for ext in valid_exts)) or f == 'duckdb']; os.chdir('gar_artifacts'); tar=tarfile.open('../duckdb-${{ matrix.arch }}.tar.gz', 'w:gz'); [tar.add(f) for f in os.listdir('.')]; tar.close()"
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
