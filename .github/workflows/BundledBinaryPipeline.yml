@@ -203,14 +203,20 @@ jobs:
       - name: Compress Artifacts
         shell: bash
         run: |
-          mkdir -p gar_artifacts
-          find build -name "duckdb" -type f -exec cp {} gar_artifacts/ \; 2>/dev/null || true
-          find build -name "duckdb.exe" -type f -exec cp {} gar_artifacts/ \; 2>/dev/null || true
-          find build -name "libduckdb_odbc.dylib" -type f -exec cp {} gar_artifacts/ \; 2>/dev/null || true
-          find build -name "duckdb_odbc.dll" -type f -exec cp {} gar_artifacts/ \; 2>/dev/null || true
-          find build -name "duckdb_odbc.lib" -type f -exec cp {} gar_artifacts/ \; 2>/dev/null || true
-          cd gar_artifacts
-          tar -czf ../duckdb-${{ matrix.arch }}.tar.gz .
+          python -c "
+import os, shutil, tarfile
+os.makedirs('gar_artifacts', exist_ok=True)
+targets = {'duckdb', 'duckdb.exe', 'libduckdb_odbc.dylib', 'duckdb_odbc.dll', 'duckdb_odbc.lib', 'libduckdb_odbc.so'}
+for root, dirs, files in os.walk('build'):
+    for f in files:
+        if f in targets:
+            print(f'Found {f} at {root}')
+            shutil.copy(os.path.join(root, f), 'gar_artifacts/')
+os.chdir('gar_artifacts')
+with tarfile.open('../duckdb-${{ matrix.arch }}.tar.gz', 'w:gz') as tar:
+    for f in os.listdir('.'):
+        tar.add(f)
+"
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
