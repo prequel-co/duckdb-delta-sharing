@@ -2,11 +2,17 @@
 # description: test duckdb_delta_sharing extension
 # group: [sql]
 
-# Require statement will ensure this test is run with this extension loaded
+# The extension overlays read_parquet, so parquet must be present to load it
 require parquet
 
-require json
-
-require httpfs
-
 require duckdb_delta_sharing
+
+# delta_share_list accepts 0-3 args; a 4th is rejected at bind time, before any
+# HTTP call, so this needs only a (fake) secret and no live share.
+statement ok
+CREATE SECRET (TYPE delta_sharing, PROVIDER config, ENDPOINT 'https://example.invalid/api/2.0/delta-sharing', BEARER_TOKEN 'fake-token');
+
+statement error
+SELECT * FROM delta_share_list('s', 'sc', 't', 'extra');
+----
+accepts 0, 1, 2, 3 arguments

@@ -112,6 +112,9 @@ public:
     // Parse Spark SQL JSON schema to DuckDB types and names
     static void ParseSparkSchema(const std::string &schema_string, vector<LogicalType> &return_types, vector<string> &names, vector<string> &physical_names);
 
+    // Parse Spark SQL JSON schema to DuckDB types/names plus each field's nullable flag (Spark defaults nullable=true)
+    static void ParseSparkSchema(const std::string &schema_string, vector<LogicalType> &return_types, vector<string> &names, vector<string> &physical_names, vector<bool> &nullables);
+
     // List schemas in a share - returns JSON array of items
     JsonValue ListSchemas(const std::string &share_name, int max_results = -1, const std::string &page_token = "");
 

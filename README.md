@@ -65,6 +65,12 @@ SELECT * FROM delta_share_list('my_share');
 
 -- List tables in a schema
 SELECT * FROM delta_share_list('my_share', 'my_schema');
+
+-- List every table in a share, across all schemas
+SELECT * FROM delta_share_list_all_tables('my_share');
+
+-- List a table's columns (column_name, column_type, is_nullable, ordinal_position)
+SELECT * FROM delta_share_list('my_share', 'my_schema', 'my_table');
 ```
 
 ### Reading Tables

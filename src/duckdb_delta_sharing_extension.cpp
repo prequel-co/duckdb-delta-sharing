@@ -106,11 +106,71 @@ static unique_ptr<FunctionData> ListBind(
             return_types.push_back(LogicalType::VARCHAR);
             return_types.push_back(LogicalType::VARCHAR);
 
+        } else if (input.inputs.size() == 3) { // Columns
+            result->list_type = 3;
+            string share_name = input.inputs[0].GetValue<string>();
+            string schema_name = input.inputs[1].GetValue<string>();
+            string table_name = input.inputs[2].GetValue<string>();
+            auto md = client.QueryTableMetadata(share_name, schema_name, table_name);
+
+            vector<LogicalType> col_logical_types;
+            vector<string> col_physical_names;
+            DeltaSharingClient::ParseSparkSchema(md.metadata.schema_string, col_logical_types, result->col_names, col_physical_names, result->col_nullables);
+            for (auto &col_type : col_logical_types) {
+                result->col_types.push_back(col_type.ToString());
+            }
+
+            // A table that resolved its metadata always has columns; zero means the schema failed to parse
+            if (result->col_names.empty()) {
+                throw IOException("could not parse columns for " + share_name + "." + schema_name + "." + table_name);
+            }
+
+            names.push_back("column_name");
+            names.push_back("column_type");
+            names.push_back("is_nullable");
+            names.push_back("ordinal_position");
+            return_types.push_back(LogicalType::VARCHAR);
+            return_types.push_back(LogicalType::VARCHAR);
+            return_types.push_back(LogicalType::BOOLEAN);
+            return_types.push_back(LogicalType::INTEGER);
+
         } else {
-            throw BinderException("ListBind error: function accepts 0, 1, 2 arguments");
+            throw BinderException("ListBind error: function accepts 0, 1, 2, 3 arguments");
         }
     } catch (const std::exception &e) {
         throw IOException("ListBind error: " + std::string(e.what()));
+    }
+
+    return std::move(result);
+}
+
+// Lists every table in a share across all schemas (GET /shares/{share}/all-tables).
+// Reuses ListFunction's list_type == 2 (tables) emit path.
+static unique_ptr<FunctionData> AllTablesBind(
+    ClientContext &context,
+    TableFunctionBindInput &input,
+    vector<LogicalType> &return_types,
+    vector<string> &names) {
+
+    auto result = make_uniq<ListBindData>();
+
+    try {
+        DeltaSharingProfile profile = DeltaSharingProfile::FromConfig(context);
+        DeltaSharingClient client(profile);
+
+        result->list_type = 2;
+        string share_name = input.inputs[0].GetValue<string>();
+        result->items = client.ListAllTables(share_name);
+        names.push_back("name");
+        names.push_back("schema");
+        names.push_back("share");
+        names.push_back("id");
+        return_types.push_back(LogicalType::VARCHAR);
+        return_types.push_back(LogicalType::VARCHAR);
+        return_types.push_back(LogicalType::VARCHAR);
+        return_types.push_back(LogicalType::VARCHAR);
+    } catch (const std::exception &e) {
+        throw IOException("AllTablesBind error: " + std::string(e.what()));
     }
 
     return std::move(result);
@@ -124,6 +184,21 @@ static void ListFunction(
     auto &bind_data = data_p.bind_data->CastNoConst<ListBindData>();
 
     idx_t count = 0;
+
+    if (bind_data.list_type == 3) { // Columns: emit typed rows from parsed schema
+        while (bind_data.current_idx < bind_data.col_names.size() && count < STANDARD_VECTOR_SIZE) {
+            idx_t idx = bind_data.current_idx;
+            output.SetValue(0, count, Value(bind_data.col_names[idx]));
+            output.SetValue(1, count, Value(bind_data.col_types[idx]));
+            output.SetValue(2, count, Value::BOOLEAN(bind_data.col_nullables[idx]));
+            output.SetValue(3, count, Value::INTEGER(static_cast<int32_t>(idx + 1)));
+            bind_data.current_idx++;
+            count++;
+        }
+        output.SetCardinality(count);
+        return;
+    }
+
     // Consider: architectural tradeoff to accept NULL json fields?
     // Convert JsonValue to json for internal processing
     auto* items_json = static_cast<json*>(bind_data.items.GetInternalPtr());
@@ -687,6 +762,9 @@ static void LoadInternal(DUCKDB_DELTA_SHARING_EXTENSION_LOAD_PARAM) {
     TableFunction list("delta_share_list", {}, ListFunction, ListBind);
     list.varargs = LogicalType::VARCHAR;
     DUCKDB_REGISTER_FUNCTION(db, list);
+
+    TableFunction all_tables("delta_share_list_all_tables", {LogicalType::VARCHAR}, ListFunction, AllTablesBind);
+    DUCKDB_REGISTER_FUNCTION(db, all_tables);
 
     // Register our read_parquet overlay!
     auto &parquet_scan_entry = DUCKDB_GET_TABLE_FUNCTION(db, con, "read_parquet");
