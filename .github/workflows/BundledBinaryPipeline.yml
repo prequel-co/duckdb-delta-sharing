@@ -106,21 +106,54 @@ jobs:
         if: startsWith(matrix.os, 'macos')
         run: |
           if [[ "${{ matrix.arch }}" == "osx_amd64" ]]; then
-            curl -sL https://github.com/lurcher/unixODBC/releases/download/2.3.12/unixODBC-2.3.12.tar.gz | tar xz
-            cd unixODBC-2.3.12
-            CFLAGS="-arch x86_64 -arch arm64" LDFLAGS="-arch x86_64 -arch arm64" ./configure --prefix=/tmp/unixodbc --disable-gui --disable-drivers
+            curl -sL https://github.com/openlink/iODBC/releases/download/v3.52.16/libiodbc-3.52.16.tar.gz | tar xz
+            cd libiodbc-3.52.16
+            CFLAGS="-arch x86_64 -arch arm64" LDFLAGS="-arch x86_64 -arch arm64" ./configure --prefix=/tmp/libiodbc --disable-gui
             make -j4
             make install
             cd ..
-            export CMAKE_PREFIX_PATH="/tmp/unixodbc"
+            export CMAKE_PREFIX_PATH="/tmp/libiodbc"
           else
-            brew install unixodbc || true
-            export CMAKE_PREFIX_PATH="$(brew --prefix unixodbc)"
+            brew install libiodbc || true
+            export CMAKE_PREFIX_PATH="$(brew --prefix libiodbc)"
           fi
           git clone https://github.com/duckdb/duckdb-odbc.git build/duckdb-odbc
           cd build/duckdb-odbc
-          git checkout 1abb7cbf  # pin: last duckdb-odbc ref before jemalloc (#455) broke the macOS/Windows ODBC build
+          git checkout c816687b
+          patch -p1 < ../../mac_odbc_fixes.patch
+          cat << 'EOF' > patch_static.py
+          import os
+          workspace = os.path.abspath("../..")
+          src_files = [os.path.join(workspace, "src", f) for f in ["delta_share_multi_file_reader.cpp", "delta_sharing_client.cpp", "delta_sharing_json.cpp", "duckdb_delta_sharing_extension.cpp", "duckdb_delta_sharing_functions.cpp"]]
+          ext_src = " " + " ".join(src_files)
+          inc_dir = os.path.join(workspace, "src", "include")
+          
+          f='CMakeLists.txt'
+          c=open(f).read()
+          c=c.replace('cmake_minimum_required(VERSION 3.5...3.29)', 'cmake_minimum_required(VERSION 3.12...3.29)')
+          fetch_block = "include(FetchContent)\nFetchContent_Declare(nlohmann_json URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz)\nFetchContent_MakeAvailable(nlohmann_json)\nFetchContent_Declare(roaring GIT_REPOSITORY https://github.com/RoaringBitmap/CRoaring.git GIT_TAG v4.6.1)\nFetchContent_MakeAvailable(roaring)\nfind_package(CURL REQUIRED)\n"
+          c=c.replace('add_subdirectory(src)', fetch_block + 'add_subdirectory(src)')
+          c=c.replace('else()', 'elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")')
+          c=c.replace('-DNO_FRAMEWORKS', '-DNO_FRAMEWORKS -DSQL_ATTR_ASYNC_DBC_FUNCTIONS_ENABLE=117 -DSQL_ASYNC_DBC_FUNCTIONS=10023 -DSQL_ASYNC_DBC_NOT_CAPABLE=0')
+          c=c.replace('add_subdirectory(test)', '')
+          c=c.replace('add_library(duckdb_core_obj OBJECT ${CORE_OBJECT_FILES})', f'include_directories({inc_dir})\nadd_library(duckdb_core_obj OBJECT ' + '${CORE_OBJECT_FILES}' + f' {ext_src})\ntarget_link_libraries(duckdb_core_obj PRIVATE roaring nlohmann_json::nlohmann_json)')
+          c=c.replace('target_link_libraries(duckdb_odbc ${LINK_LIB_LIST} )', 'target_link_libraries(duckdb_odbc ${LINK_LIB_LIST} roaring nlohmann_json::nlohmann_json CURL::libcurl)')
+          open(f,'w').write(c)
+
+          f2='src/duckdb/generated_extension_loader_package_build.cpp'
+          c2=open(f2).read()
+          c2=c2.replace('#include "duckdb/main/extension/generated_extension_loader.hpp"', f'#include "{inc_dir}/duckdb_delta_sharing_extension.hpp"\n#include "duckdb/main/extension/generated_extension_loader.hpp"')
+          c2=c2.replace('return ExtensionLoadResult::NOT_LOADED;', '    if (extension=="duckdb_delta_sharing") {\n        db.LoadStaticExtension<DuckdbDeltaSharingExtension>();\n        return ExtensionLoadResult::LOADED_EXTENSION;\n    }\n    return ExtensionLoadResult::NOT_LOADED;')
+          c2=c2.replace('};', '        "duckdb_delta_sharing",\n    };')
+          open(f2,'w').write(c2)
+          EOF
+          rm -rf src/duckdb
           python3 vendor.py --duckdb ../../duckdb
+          python3 patch_static.py
+          python3 ../../patch_thread_safety.py
+          python3 ../../patch_widechar.py
+          python3 ../../patch_fetch_buffer.py
+          python3 ../../patch_fetch_offset.py
           mkdir -p build/release
           cd build/release
           cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=${{ (matrix.arch == 'osx_amd64' && 'x86_64') || (matrix.arch == 'osx_arm64' && 'arm64') || '' }} ../..
@@ -132,7 +165,7 @@ jobs:
         run: |
           git clone https://github.com/duckdb/duckdb-odbc.git build/duckdb-odbc
           cd build/duckdb-odbc
-          git checkout 1abb7cbf  # pin: last duckdb-odbc ref before jemalloc (#455) broke the macOS/Windows ODBC build
+          git checkout c816687b
           cat << 'EOF' > patch.py
           import os
           f='CMakeLists.txt.in'
@@ -150,8 +183,15 @@ jobs:
           EOF
           python patch.py
           
+          rm -rf src/duckdb
+          python -c "f='../../duckdb/scripts/package_build.py'; c=open(f).read(); open(f,'w').write(c.replace('os.mkdir(current_path)', 'os.makedirs(current_path, exist_ok=True)'))"
+          python -c "f='vendor.py'; c=open(f).read(); open(f,'w').write(c.replace('source_list.sort()', 'source_list = [x.replace(chr(92), \'/\') for x in source_list]\\nsource_list.sort()').replace('jemalloc_source_list.sort()', 'jemalloc_source_list = [x.replace(chr(92), \'/\') for x in jemalloc_source_list]\\njemalloc_source_list.sort()').replace('include_list.sort()', 'include_list = [x.replace(chr(92), \'/\') for x in include_list]\\ninclude_list.sort()').replace('jemalloc_include_list.sort()', 'jemalloc_include_list = [x.replace(chr(92), \'/\') for x in jemalloc_include_list]\\njemalloc_include_list.sort()'))"
           python vendor.py --duckdb ../../duckdb
           python -c "f='src/odbc_driver/common/file_io.cpp'; c=open(f).read(); open(f,'w').write(c.replace('file.open(wpath,', 'file.open(wpath.c_str(),'))"
+          python ../../patch_thread_safety.py
+          python ../../patch_widechar.py
+          python ../../patch_fetch_buffer.py
+          python ../../patch_fetch_offset.py
           mkdir -p build/release
           cd build/release
           cmake -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" ../..
@@ -163,14 +203,7 @@ jobs:
       - name: Compress Artifacts
         shell: bash
         run: |
-          mkdir -p gar_artifacts
-          cp build/release/duckdb gar_artifacts/ 2>/dev/null || true
-          cp build/release/duckdb.exe gar_artifacts/ 2>/dev/null || true
-          cp build/duckdb-odbc/build/release/libduckdb_odbc.dylib gar_artifacts/ 2>/dev/null || true
-          cp build/duckdb-odbc/build/release/duckdb_odbc.dll gar_artifacts/ 2>/dev/null || true
-          cp build/duckdb-odbc/build/release/duckdb_odbc.lib gar_artifacts/ 2>/dev/null || true
-          cd gar_artifacts
-          tar -czf ../duckdb-${{ matrix.arch }}.tar.gz .
+          python -c "import os, shutil, tarfile; os.makedirs('gar_artifacts', exist_ok=True); valid_exts = {'.exe', '.dll', '.dylib', '.so', '.lib', '.a'}; [shutil.copy(os.path.join(r, f), 'gar_artifacts/') for r, d, files in os.walk('build') for f in files if ('duckdb' in f and any(f.endswith(ext) for ext in valid_exts)) or f == 'duckdb']; os.chdir('gar_artifacts'); tar=tarfile.open('../duckdb-${{ matrix.arch }}.tar.gz', 'w:gz'); [tar.add(f) for f in os.listdir('.')]; tar.close()"
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4

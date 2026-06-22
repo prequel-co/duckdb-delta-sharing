@@ -5,7 +5,13 @@
 #include <nlohmann/json.hpp>
 #include "duckdb/main/secret/secret.hpp"
 #include "duckdb/main/secret/secret_manager.hpp"
+// WebAssembly (Emscripten) bypasses libcurl because standard socket-based networking is unsupported in browsers.
+// Instead, it uses the native browser fetch API via emscripten/fetch.h
+#ifndef __EMSCRIPTEN__
 #include <curl/curl.h>
+#else
+#include <emscripten/fetch.h>
+#endif
 #include <sstream>
 #include <fstream>
 
@@ -16,6 +22,7 @@ using json = nlohmann::json;
 #include <algorithm>
 #include <map>
 
+#ifndef __EMSCRIPTEN__
 // Callback for libcurl to write response data
 static size_t WriteCallback(void *contents, size_t size, size_t nmemb, void *userp) {
     ((std::string *)userp)->append((char *)contents, size * nmemb);
@@ -43,6 +50,7 @@ static size_t HeaderCallback(void *contents, size_t size, size_t nmemb, void *us
     }
     return total_size;
 }
+#endif
 
 static std::string GetNextPageLink(const std::map<std::string, std::string>& headers) {
     auto it = headers.find("link");
@@ -148,16 +156,22 @@ DeltaSharingProfile DeltaSharingProfile::FromConfig(ClientContext &context) {
 // DeltaSharingClient implementation
 DeltaSharingClient::DeltaSharingClient(const DeltaSharingProfile &profile)
     : profile_(profile) {
+#ifndef __EMSCRIPTEN__
     curl_ = curl_easy_init();
     if (!curl_) {
         throw InternalException("DeltaSharingClient error: Failed to initialize CURL");
     }
+#else
+    curl_ = nullptr;
+#endif
 }
 
 DeltaSharingClient::~DeltaSharingClient() {
+#ifndef __EMSCRIPTEN__
     if (curl_) {
         curl_easy_cleanup((CURL *)curl_);
     }
+#endif
 }
 
 std::string DeltaSharingClient::BuildUrl(const std::string &path, const std::string &query_params) {
@@ -178,9 +192,101 @@ HttpResponse DeltaSharingClient::PerformRequest(
     response.success = false;
     response.status_code = 0;
 
-    CURL *curl = (CURL *)curl_;
     std::string url = BuildUrl(path, query_params);
     std::string response_body;
+
+#ifdef __EMSCRIPTEN__
+    // Emscripten WASM builds use emscripten_fetch to execute asynchronous HTTP requests synchronously
+    // without blocking the main browser thread via Asyncify/JS interop.
+    emscripten_fetch_attr_t attr;
+    emscripten_fetch_attr_init(&attr);
+    strcpy(attr.requestMethod, method.c_str());
+    attr.attributes = EMSCRIPTEN_FETCH_LOAD_TO_MEMORY | EMSCRIPTEN_FETCH_SYNCHRONOUS;
+
+    std::vector<const char*> headers;
+    std::string auth_header = "Bearer " + profile_.bearer_token;
+    headers.push_back("Authorization");
+    headers.push_back(auth_header.c_str());
+    headers.push_back("Content-Type");
+    headers.push_back("application/json");
+    headers.push_back("User-Agent");
+    headers.push_back("delta-sharing-spark/3.1.0");
+    headers.push_back("Accept");
+    headers.push_back("application/x-ndjson,application/json");
+    headers.push_back("delta-sharing-capabilities");
+    headers.push_back("responseformat=delta;readerfeatures=deletionvectors,columnmapping,timestampntz");
+
+    std::string telemetry_encoded;
+    if (profile_.query_telemetry_enabled && !profile_.current_query.empty()) {
+        std::string query = profile_.current_query;
+        if (query.length() > 2048) {
+            query = query.substr(0, 2048);
+        }
+        static const char* lookup = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        int val = 0, valb = -6;
+        for (unsigned char c : query) {
+            val = (val << 8) + c;
+            valb += 8;
+            while (valb >= 0) {
+                telemetry_encoded.push_back(lookup[(val >> valb) & 0x3F]);
+                valb -= 6;
+            }
+        }
+        if (valb > -6) telemetry_encoded.push_back(lookup[((val << 8) >> (valb + 8)) & 0x3F]);
+        while (telemetry_encoded.size() % 4) telemetry_encoded.push_back('=');
+
+        headers.push_back("delta-sharing-query-sql");
+        headers.push_back(telemetry_encoded.c_str());
+    }
+    headers.push_back(nullptr);
+    attr.requestHeaders = headers.data();
+
+    if (method == "POST") {
+        if (post_data.empty() || post_data == "null") {
+            attr.requestData = "{}";
+            attr.requestDataSize = 2;
+        } else {
+            attr.requestData = post_data.c_str();
+            attr.requestDataSize = post_data.length();
+        }
+    }
+
+    emscripten_fetch_t *fetch = emscripten_fetch(&attr, url.c_str());
+    response.status_code = fetch->status;
+    response.success = (fetch->status >= 200 && fetch->status < 300);
+
+    if (fetch->data && fetch->numBytes > 0) {
+        response_body = std::string(fetch->data, fetch->numBytes);
+    } else if (!response.success) {
+        response.error_message = "HTTP error " + std::to_string(fetch->status);
+    }
+
+    size_t header_len = emscripten_fetch_get_response_headers_length(fetch);
+    if (header_len > 0) {
+        std::string all_headers(header_len, '\0');
+        emscripten_fetch_get_response_headers(fetch, &all_headers[0], header_len);
+        std::istringstream stream(all_headers);
+        std::string header_line;
+        while (std::getline(stream, header_line)) {
+            auto colon_pos = header_line.find(':');
+            if (colon_pos != std::string::npos) {
+                std::string key = header_line.substr(0, colon_pos);
+                std::string value = header_line.substr(colon_pos + 1);
+                key.erase(0, key.find_first_not_of(" \t\r\n"));
+                key.erase(key.find_last_not_of(" \t\r\n") + 1);
+                value.erase(0, value.find_first_not_of(" \t\r\n"));
+                value.erase(value.find_last_not_of(" \t\r\n") + 1);
+                std::transform(key.begin(), key.end(), key.begin(), ::tolower);
+                response.headers[key] = value;
+            }
+        }
+    }
+
+    emscripten_fetch_close(fetch);
+    response.body = response_body;
+
+#else
+    CURL *curl = (CURL *)curl_;
 
     // Set URL
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
@@ -271,6 +377,7 @@ HttpResponse DeltaSharingClient::PerformRequest(
 
     response.body = response_body;
     response.success = (response.status_code >= 200 && response.status_code < 300);
+#endif
 
     if (!response.success && !response_body.empty()) {
         try {

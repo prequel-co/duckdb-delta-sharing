@@ -15,8 +15,10 @@ project(${TARGET_NAME})
 # DuckDB's extension distribution supports vcpkg. As such, dependencies can be added in ./vcpkg.json and then
 # used in cmake with find_package. Feel free to remove or replace with other dependencies.
 # Note that it should also be removed from vcpkg.json to prevent needlessly installing it..
-find_package(OpenSSL REQUIRED)
-find_package(CURL REQUIRED)
+if(NOT EMSCRIPTEN)
+    find_package(OpenSSL REQUIRED)
+    find_package(CURL REQUIRED)
+endif()
 find_package(nlohmann_json QUIET)
 if(NOT nlohmann_json_FOUND)
     include(FetchContent)
@@ -64,8 +66,15 @@ build_static_extension(${TARGET_NAME} ${EXTENSION_SOURCES})
 build_loadable_extension(${TARGET_NAME} " " ${EXTENSION_SOURCES})
 
 # Link dependencies in both the static library as the loadable extension
-target_link_libraries(${EXTENSION_NAME} OpenSSL::SSL OpenSSL::Crypto CURL::libcurl nlohmann_json::nlohmann_json roaring)
-target_link_libraries(${LOADABLE_EXTENSION_NAME} OpenSSL::SSL OpenSSL::Crypto CURL::libcurl nlohmann_json::nlohmann_json roaring)
+if(EMSCRIPTEN)
+    target_link_options(${EXTENSION_NAME} PRIVATE -sFETCH=1)
+    target_link_options(${LOADABLE_EXTENSION_NAME} PRIVATE -sFETCH=1)
+    target_link_libraries(${EXTENSION_NAME} nlohmann_json::nlohmann_json roaring)
+    target_link_libraries(${LOADABLE_EXTENSION_NAME} nlohmann_json::nlohmann_json roaring)
+else()
+    target_link_libraries(${EXTENSION_NAME} OpenSSL::SSL OpenSSL::Crypto CURL::libcurl nlohmann_json::nlohmann_json roaring)
+    target_link_libraries(${LOADABLE_EXTENSION_NAME} OpenSSL::SSL OpenSSL::Crypto CURL::libcurl nlohmann_json::nlohmann_json roaring)
+endif()
 
 target_include_directories(${EXTENSION_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/duckdb/extension/parquet/include")
 target_include_directories(${LOADABLE_EXTENSION_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/duckdb/extension/parquet/include")
