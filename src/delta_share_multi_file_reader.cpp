@@ -39,6 +39,12 @@ DeltaShareMultiFileList::DeltaShareMultiFileList(vector<OpenFileInfo> paths, vec
 
 idx_t DeltaShareDeleteFilter::Filter(row_t start_row_index, idx_t count, SelectionVector &result_sel) {
     if (count == 0) return 0;
+    
+    // Ensure result_sel is initialized (sel_data is not null)
+    if (!result_sel.data()) {
+        result_sel.Initialize(count);
+    }
+    
     idx_t current_select = 0;
     for (idx_t i = 0; i < count; i++) {
         auto row_id = i + start_row_index;
@@ -141,6 +147,7 @@ ReaderInitializeType DeltaShareMultiFileReader::InitializeReader(
             if (delta_file.has_deletion_vector) {
                 const auto &dv_meta = delta_file.deletion_vector;
                 roaring::api::roaring_bitmap_t *dv_bitmap = nullptr;
+                std::string current_raw_data = "";
 
                 if (dv_meta.storage_type == "u" || dv_meta.storage_type == "i") { 
                     try {
@@ -150,6 +157,7 @@ ReaderInitializeType DeltaShareMultiFileReader::InitializeReader(
                         } else if (decoded.size() > 0) {
                              dv_bitmap = roaring::api::roaring_bitmap_portable_deserialize((const char*)decoded.data());
                         }
+                        current_raw_data = std::string((const char*)decoded.data(), decoded.size());
                     } catch (const std::exception &e) {
                         throw IOException("Failed to decode inline Deletion Vector: " + std::string(e.what()));
                     }
@@ -157,17 +165,25 @@ ReaderInitializeType DeltaShareMultiFileReader::InitializeReader(
                     try {
                         auto &fs = FileSystem::GetFileSystem(context);
                         auto handle = fs.OpenFile(dv_meta.path_or_inline_dv, FileFlags::FILE_FLAGS_READ);
-                        auto size = handle->GetFileSize();
-                        string raw_data;
-                        raw_data.resize(size);
-                        handle->Read((void *)raw_data.data(), size);
-                        
-                        if (size > 4) {
-                            // Skip the 4-byte size preamble
-                            dv_bitmap = roaring::api::roaring_bitmap_portable_deserialize((const char*)raw_data.data() + 4);
+                        idx_t size_to_read = dv_meta.size_in_bytes > 0 ? dv_meta.size_in_bytes : handle->GetFileSize();
+                        current_raw_data.resize(size_to_read);
+                        if (dv_meta.offset > 0) {
+                            handle->Read((void *)current_raw_data.data(), size_to_read, dv_meta.offset);
                         } else {
-                            throw IOException("Remote Deletion Vector file too small");
+                            handle->Read((void *)current_raw_data.data(), size_to_read);
                         }
+
+                        // Try finding the Roaring magic number 0x3A30
+                        const char* data_ptr = current_raw_data.data();
+                        size_t valid_offset = 0;
+                        for (size_t i = 0; i <= size_to_read - 4; i++) {
+                            if ((unsigned char)current_raw_data[i] == 0x3A && (unsigned char)current_raw_data[i+1] == 0x30) {
+                                valid_offset = i;
+                                break;
+                            }
+                        }
+
+                        dv_bitmap = roaring::api::roaring_bitmap_portable_deserialize(data_ptr + valid_offset);
                     } catch (const std::exception &e) {
                          throw IOException("Failed to fetch remote Deletion Vector: " + std::string(e.what()));
                     }
@@ -176,7 +192,7 @@ ReaderInitializeType DeltaShareMultiFileReader::InitializeReader(
                 }
 
                 if (dv_bitmap) {
-                    reader_data.reader->deletion_filter = make_uniq<DeltaShareDeleteFilter>(dv_bitmap);
+                    reader_data.reader->deletion_filter = make_uniq<DeltaShareDeleteFilter>(dv_bitmap, current_raw_data);
                 }
             }
         }

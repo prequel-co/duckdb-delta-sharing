@@ -24,11 +24,11 @@ if [ -f .env ]; then
     source .env
 fi
 
-DB_ENDPOINT=${DELTA_SHARING_ENDPOINT:-"https://eastus-c3.azuredatabricks.net/api/2.0/delta-sharing/metastores/88b565d0-d549-486d-8854-fad58d9a179c"}
-DB_TOKEN=${DELTA_SHARING_BEARER_TOKEN:-""}
+DB_ENDPOINT=${ENDPOINT:-"https://eastus-c3.azuredatabricks.net/api/2.0/delta-sharing/metastores/88b565d0-d549-486d-8854-fad58d9a179c"}
+DB_TOKEN=${BEARER_TOKEN:-""}
 
 if [ -z "$DB_TOKEN" ]; then
-    echo "DELTA_SHARING_BEARER_TOKEN not found in environment or .env file"
+    echo "BEARER_TOKEN not found in environment or .env file"
     exit 1
 fi
 
@@ -70,6 +70,26 @@ CREATE SECRET (TYPE delta_sharing, PROVIDER config, ENDPOINT '${DB_ENDPOINT}', B
 SELECT * FROM delta_share_read('${SHARE}', '${SCHEMA}', 'orders');
 "
 $DUCKDB_PATH -unsigned -c "$QUERY_ORDERS"
+
+echo ""
+echo "Testing Deletion Vectors (checking for duplicate ord_001)..."
+echo "---------------------------------------------------------"
+
+QUERY_DV="
+LOAD '${EXT_PATH}';
+LOAD httpfs;
+CREATE SECRET (TYPE delta_sharing, PROVIDER config, ENDPOINT '${DB_ENDPOINT}', BEARER_TOKEN '${DB_TOKEN}');
+
+SELECT count(*) FROM delta_share_read('${SHARE}', '${SCHEMA}', 'orders') WHERE order_id = 'ord_001';
+"
+
+ORD_001_COUNT=$($DUCKDB_PATH -unsigned -csv -noheader -c "$QUERY_DV" | tail -n 1 | tr -d '[:space:]')
+echo "ord_001 Count: $ORD_001_COUNT"
+
+if [[ "$ORD_001_COUNT" -gt 1 ]]; then
+    echo "ERROR: Deletion Vectors not processed correctly! Expected 1 row for ord_001, got $ORD_001_COUNT"
+    exit 1
+fi
 
 echo ""
 echo "Running E2E tests against remote table: ${SHARE}.${SCHEMA}.events..."

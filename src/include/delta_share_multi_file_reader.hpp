@@ -76,12 +76,13 @@ public:
 // Filter to apply roaring deletion vectors inside the DuckDB scanner!
 class DeltaShareDeleteFilter : public DeleteFilter {
 public:
-    DeltaShareDeleteFilter(roaring::api::roaring_bitmap_t *dv) : dv(dv) {}
+    DeltaShareDeleteFilter(roaring::api::roaring_bitmap_t *dv, std::string raw_data = "") : dv(dv), raw_data(raw_data) {}
     ~DeltaShareDeleteFilter() override;
     idx_t Filter(row_t start_row_index, idx_t count, SelectionVector &result_sel) override;
 
 private:
     roaring::api::roaring_bitmap_t *dv;
+    std::string raw_data;
 };
 
 } // namespace duckdb
