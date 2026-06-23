@@ -176,7 +176,7 @@ ReaderInitializeType DeltaShareMultiFileReader::InitializeReader(
                         // Try finding the Roaring magic number 0x3A30
                         const char* data_ptr = current_raw_data.data();
                         size_t valid_offset = 0;
-                        for (size_t i = 0; i <= size_to_read - 4; i++) {
+                        for (size_t i = 0; i + 1 < size_to_read; i++) {
                             if ((unsigned char)current_raw_data[i] == 0x3A && (unsigned char)current_raw_data[i+1] == 0x30) {
                                 valid_offset = i;
                                 break;
