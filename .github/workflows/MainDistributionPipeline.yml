@@ -19,7 +19,7 @@ jobs:
     if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'build-extensions')
     uses: duckdb/extension-ci-tools/.github/workflows/_extension_distribution.yml@v1.5.1
     with:
-      duckdb_version: v1.5.3
+      duckdb_version: v1.5.4
       ci_tools_version: v1.5.1
       extension_name: duckdb_delta_sharing
       reduced_ci_mode: disabled
