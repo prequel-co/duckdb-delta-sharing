@@ -1,6 +1,6 @@
 # 🦆 DuckDB Delta Sharing
 
-[![DuckDB Version](https://img.shields.io/badge/DuckDB-v1.5.3-blue)](https://duckdb.org/)
+[![DuckDB Version](https://img.shields.io/badge/DuckDB-v1.5.4-blue)](https://duckdb.org/)
 
 The most efficient way to query **Delta Lake** tables directly from **DuckDB**. This extension implements the [Delta Sharing protocol](https://delta.io/sharing/), allowing you to stream data from remote Delta Sharing servers with native performance.
 
