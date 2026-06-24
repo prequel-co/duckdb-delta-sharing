@@ -67,8 +67,8 @@ build_loadable_extension(${TARGET_NAME} " " ${EXTENSION_SOURCES})
 
 # Link dependencies in both the static library as the loadable extension
 if(EMSCRIPTEN)
-    target_link_options(${EXTENSION_NAME} PRIVATE -sFETCH=1)
-    target_link_options(${LOADABLE_EXTENSION_NAME} PRIVATE -sFETCH=1)
+    target_link_options(${EXTENSION_NAME} PRIVATE -sFETCH=1 -sEXPORT_ALL=1)
+    target_link_options(${LOADABLE_EXTENSION_NAME} PRIVATE -sFETCH=1 -sEXPORT_ALL=1)
     target_link_libraries(${EXTENSION_NAME} nlohmann_json::nlohmann_json roaring)
     target_link_libraries(${LOADABLE_EXTENSION_NAME} nlohmann_json::nlohmann_json roaring)
 else()

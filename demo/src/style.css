@@ -1,0 +1,154 @@
+@import '@shoelace-style/shoelace/dist/themes/dark.css';
+
+:root {
+  /* Monochrome aesthetics */
+  --sl-color-primary-500: #e0e0e0;
+  --sl-color-primary-600: #ffffff;
+  --sl-color-neutral-0: #000000;
+  --sl-color-neutral-50: #0a0a0a;
+  --sl-color-neutral-100: #141414;
+  --sl-color-neutral-200: #1f1f1f;
+  --sl-color-neutral-300: #292929;
+  --sl-color-neutral-400: #333333;
+  --sl-color-neutral-500: #4a4a4a;
+  --sl-color-neutral-600: #757575;
+  --sl-color-neutral-700: #a3a3a3;
+  --sl-color-neutral-800: #d4d4d4;
+  --sl-color-neutral-900: #f5f5f5;
+  --sl-color-neutral-1000: #ffffff;
+  
+  /* Powerful highlights */
+  --highlight-amber: #ffb000;
+  --highlight-green: #00ff00;
+  --highlight-red: #ff0000;
+
+  font-family: 'Inter', -apple-system, sans-serif;
+  background-color: #000000;
+  color: #e0e0e0;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+#app {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Typography Overrides */
+.mono {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+}
+
+.title {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+/* Custom login portal */
+.login-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  background-color: #000000;
+}
+
+.login-card {
+  border: 1px solid #333333;
+  padding: 2rem;
+  background-color: #0a0a0a;
+  min-width: 400px;
+}
+
+.highlight-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  background-color: var(--highlight-amber);
+  border-radius: 50%;
+  box-shadow: 0 0 8px var(--highlight-amber);
+  margin-right: 8px;
+}
+
+/* Workspace */
+.workspace-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  padding: 1rem;
+  gap: 1rem;
+}
+
+.top-bar {
+  display: flex;
+  gap: 1rem;
+  height: 300px;
+}
+
+.ai-box {
+  flex: 1;
+  border: 1px solid #333333;
+  background-color: #0a0a0a;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.sql-box {
+  flex: 2;
+  border: 1px solid #333333;
+  background-color: #0a0a0a;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.sql-editor {
+  flex: 1;
+  font-family: 'JetBrains Mono', monospace;
+  background: transparent;
+  color: #e0e0e0;
+  border: none;
+  outline: none;
+  resize: none;
+  width: 100%;
+}
+
+.results-box {
+  flex: 1;
+  border: 1px solid #333333;
+  background-color: #0a0a0a;
+  padding: 1rem;
+  overflow: auto;
+}
+
+/* Table styling */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.85rem;
+}
+
+th, td {
+  border: 1px solid #333333;
+  padding: 0.5rem;
+  text-align: left;
+}
+
+th {
+  text-transform: uppercase;
+  color: #a3a3a3;
+  font-weight: normal;
+}
