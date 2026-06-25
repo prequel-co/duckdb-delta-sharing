@@ -10,7 +10,7 @@ const state = reactive({
   view: 'login', // 'login' | 'workspace'
   loading: false,
   error: '',
-  sqlQuery: "SELECT * FROM delta_scan('profile.share') LIMIT 50;",
+  sqlQuery: "SELECT * FROM delta_share_list();",
   queryResults: [] as any[],
   aiPrompt: '',
   aiSupported: 'ai' in window,
@@ -26,10 +26,10 @@ async function generateSQL() {
   try {
     const ai = (window as any).ai;
     const session = await ai.createTextSession();
-    
+
     // Construct the context prompt
     const prompt = `You are an expert SQL assistant. Given the following request, generate a DuckDB SQL query.
-The table is accessed via delta_scan('profile.share').
+The table is accessed via delta_share_read('my_share', 'my_schema', 'my_table').
 
 Request: ${state.aiPrompt}
 Current SQL: ${state.sqlQuery}
@@ -47,15 +47,19 @@ Return ONLY the raw SQL query without markdown blocks.`;
 
 // Execute SQL Query
 async function executeSQL() {
+  console.log("executeSQL started for:", state.sqlQuery);
   state.loading = true;
   state.error = '';
   try {
     const results = await runQuery(state.sqlQuery);
+    console.log("executeSQL got results:", results);
     state.queryResults = results;
   } catch (err: any) {
+    console.error("executeSQL error:", err);
     state.error = 'SQL Error: ' + err.message;
   } finally {
     state.loading = false;
+    console.log("executeSQL finished");
   }
 }
 
@@ -64,16 +68,17 @@ async function handleFileUpload(e: Event) {
   const target = e.target as HTMLInputElement;
   const file = target.files?.[0];
   if (!file) return;
-  
+
   state.loading = true;
   state.error = '';
-  
+
   try {
     const text = await file.text();
+
     await initDuckDB();
     await loadDeltaSharingExtension();
     await setupDeltaSharingFile(text);
-    
+
     state.view = 'workspace';
   } catch (err: any) {
     state.error = 'Login Error: ' + err.message;
@@ -88,21 +93,21 @@ async function handleManualEntry() {
     state.error = 'Host and Token are required';
     return;
   }
-  
+
   state.loading = true;
   state.error = '';
-  
+
   try {
     const jsonConfig = JSON.stringify({
       shareCredentialsVersion: 1,
       endpoint: state.manualHost,
       bearerToken: state.manualToken
     });
-    
+
     await initDuckDB();
     await loadDeltaSharingExtension();
     await setupDeltaSharingFile(jsonConfig);
-    
+
     state.view = 'workspace';
   } catch (err: any) {
     state.error = 'Login Error: ' + err.message;
@@ -162,17 +167,17 @@ const WorkspaceView = html`
       <!-- AI Box -->
       <div class="ai-box">
         <div class="title" style="font-size: 0.8rem; margin-bottom: 0.5rem; color: #a3a3a3;">AI SQL ASSISTANT</div>
-        ${() => state.aiSupported 
-          ? html`
-              <textarea class="sql-editor" placeholder="Ask AI to generate SQL..." @input="${updateAIPrompt}">${state.aiPrompt}</textarea>
+        ${() => state.aiSupported
+    ? html`
+              <textarea class="sql-editor" placeholder="Ask AI to generate SQL..." @input="${updateAIPrompt}" .value="${() => state.aiPrompt}"></textarea>
               <sl-button variant="default" size="small" @click="${generateSQL}" ?loading="${state.loading}">
                 Execute AI &rarr;
               </sl-button>
             `
-          : html`
+    : html`
               <div style="color: #757575; font-size: 0.9rem;">[ AI Prompt API Not Supported in this Browser ]</div>
             `
-        }
+  }
       </div>
 
       <!-- SQL Box -->
@@ -181,32 +186,40 @@ const WorkspaceView = html`
           <span>SQL EDITOR</span>
           <sl-button variant="text" size="small" @click="${executeSQL}" ?loading="${state.loading}">[ RUN ]</sl-button>
         </div>
-        <textarea class="sql-editor" @input="${updateSQLQuery}">${state.sqlQuery}</textarea>
+        <textarea class="sql-editor" @input="${updateSQLQuery}">${() => state.sqlQuery}</textarea>
       </div>
     </div>
 
     <!-- Results Box -->
     <div class="results-box">
       <div class="title" style="font-size: 0.8rem; margin-bottom: 0.5rem; color: #a3a3a3;">RESULTS (${() => state.queryResults.length} rows)</div>
-      ${() => state.error ? html`<div style="color: var(--highlight-red);">${state.error}</div>` : ''}
       
-      ${() => {
-        if (state.queryResults.length === 0) return html`<div style="color: #757575;">[ NO DATA ]</div>`;
-        
-        const keys = Object.keys(state.queryResults[0]);
-        return html`
-          <table>
-            <thead>
-              <tr>${keys.map(k => html`<th>${k}</th>`)}</tr>
-            </thead>
-            <tbody>
-              ${state.queryResults.map(row => html`
-                <tr>${keys.map(k => html`<td>${row[k]}</td>`)}</tr>
-              `)}
-            </tbody>
-          </table>
-        `;
-      }}
+      <div style="display: ${() => state.error ? 'block' : 'none'}; color: var(--highlight-red);">
+        ${() => state.error}
+      </div>
+      
+      <div style="display: ${() => state.queryResults.length === 0 && !state.error ? 'block' : 'none'}; color: #757575;">
+        [ NO DATA ]
+      </div>
+      
+      <div style="display: ${() => state.queryResults.length > 0 ? 'block' : 'none'};">
+        ${() => {
+          if (state.queryResults.length === 0) return html``;
+          const keys = Object.keys(state.queryResults[0]);
+          return html`
+            <table>
+              <thead>
+                <tr>${() => keys.map(k => html`<th>${k}</th>`)}</tr>
+              </thead>
+              <tbody>
+                ${() => state.queryResults.map(row => html`
+                  <tr>${() => keys.map(k => html`<td>${row[k] != null ? String(row[k]) : 'NULL'}</td>`)}</tr>
+                `)}
+              </tbody>
+            </table>
+          `;
+        }}
+      </div>
     </div>
   </div>
 `;

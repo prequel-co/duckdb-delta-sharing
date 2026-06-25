@@ -21,7 +21,7 @@ let conn: duckdb.AsyncDuckDBConnection | null = null;
 export async function initDuckDB() {
     if (db) return db;
     
-    // Select a bundle based on browser checks
+    // Select a bundle based on browser checks (which will pick EH for modern browsers)
     const bundle = await duckdb.selectBundle(MANUAL_BUNDLES);
     
     // Instantiate the asynchronus version of DuckDB-wasm
@@ -41,19 +41,44 @@ export async function initDuckDB() {
 
 export async function loadDeltaSharingExtension() {
     if (!db || !conn) throw new Error("DuckDB not initialized");
-    // Register and load the bundled extension
-    await db.registerFileURL('duckdb_delta_sharing.wasm', '/duckdb_delta_sharing.wasm', duckdb.DuckDBDataProtocol.HTTP, false);
-    await conn.query(`LOAD 'duckdb_delta_sharing.wasm';`);
+    
+    // Load official dependencies first BEFORE setting custom repo
+    await conn.query(`LOAD parquet;`);
+    await conn.query(`LOAD json;`);
+    await conn.query(`LOAD httpfs;`);
+    
+    // DuckDB WASM expects extensions in a specific repository structure:
+    // $repo/$duckdb_version_hash/$duckdb_platform/$name.duckdb_extension.wasm
+    // We set our Vite dev server as the custom repository.
+    const origin = window.location.origin;
+    await conn.query(`SET custom_extension_repository='${origin}';`);
+    
+    // LOAD will automatically fetch and decompress the extension from our custom repository
+    await conn.query(`LOAD duckdb_delta_sharing;`);
 }
 
 export async function setupDeltaSharingFile(fileContent: string) {
     if (!db || !conn) throw new Error("DuckDB not initialized");
-    // Register the profile JSON so duckdb can read it
-    await db.registerFileText('profile.share', fileContent);
-    // Execute command to load profile
-    // Note: Depends on how the extension is designed. Assuming standard LOAD SHARE mechanism.
-    // e.g. LOAD_SHARE('profile.share');
-    // For now we just return true.
+    
+    // Parse the Delta Sharing profile (.share) JSON
+    const profile = JSON.parse(fileContent);
+    if (!profile.endpoint || !profile.bearerToken) {
+        throw new Error("Invalid .share profile: missing endpoint or bearerToken");
+    }
+    
+    // Drop existing secret if present
+    await conn.query(`DROP SECRET IF EXISTS my_delta_share_secret;`);
+    
+    // Create a new secret for the extension to use
+    await conn.query(`
+        CREATE SECRET my_delta_share_secret (
+            TYPE delta_sharing,
+            PROVIDER config,
+            ENDPOINT '${profile.endpoint}',
+            BEARER_TOKEN '${profile.bearerToken}'
+        );
+    `);
+    
     return true;
 }
 
