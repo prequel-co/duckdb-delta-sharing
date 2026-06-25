@@ -119,7 +119,7 @@ jobs:
           fi
           git clone https://github.com/duckdb/duckdb-odbc.git build/duckdb-odbc
           cd build/duckdb-odbc
-          git checkout c816687b
+          git checkout v1.5.4.1
           patch -p1 < ../../mac_odbc_fixes.patch
           cat << 'EOF' > patch_static.py
           import os
@@ -133,7 +133,6 @@ jobs:
           c=c.replace('cmake_minimum_required(VERSION 3.5...3.29)', 'cmake_minimum_required(VERSION 3.12...3.29)')
           fetch_block = "include(FetchContent)\nFetchContent_Declare(nlohmann_json URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz)\nFetchContent_MakeAvailable(nlohmann_json)\nFetchContent_Declare(roaring GIT_REPOSITORY https://github.com/RoaringBitmap/CRoaring.git GIT_TAG v4.6.1)\nFetchContent_MakeAvailable(roaring)\nfind_package(CURL REQUIRED)\n"
           c=c.replace('add_subdirectory(src)', fetch_block + 'add_subdirectory(src)')
-          c=c.replace('else()', 'elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")')
           c=c.replace('-DNO_FRAMEWORKS', '-DNO_FRAMEWORKS -DSQL_ATTR_ASYNC_DBC_FUNCTIONS_ENABLE=117 -DSQL_ASYNC_DBC_FUNCTIONS=10023 -DSQL_ASYNC_DBC_NOT_CAPABLE=0')
           c=c.replace('add_subdirectory(test)', '')
           c=c.replace('add_library(duckdb_core_obj OBJECT ${CORE_OBJECT_FILES})', f'include_directories({inc_dir})\nadd_library(duckdb_core_obj OBJECT ' + '${CORE_OBJECT_FILES}' + f' {ext_src})\ntarget_link_libraries(duckdb_core_obj PRIVATE roaring nlohmann_json::nlohmann_json)')
@@ -147,8 +146,6 @@ jobs:
           c2=c2.replace('};', '        "duckdb_delta_sharing",\n    };')
           open(f2,'w').write(c2)
           EOF
-          rm -rf src/duckdb
-          python3 vendor.py --duckdb ../../duckdb
           python3 patch_static.py
           python3 ../../patch_thread_safety.py
           python3 ../../patch_widechar.py
@@ -165,10 +162,10 @@ jobs:
         run: |
           git clone https://github.com/duckdb/duckdb-odbc.git build/duckdb-odbc
           cd build/duckdb-odbc
-          git checkout c816687b
+          git checkout v1.5.4.1
           cat << 'EOF' > patch.py
           import os
-          f='CMakeLists.txt.in'
+          f='CMakeLists.txt'
           c=open(f).read()
           c=c.replace('/bigobj', '-Wa,-mbig-obj')
           c=c.replace('add_subdirectory(winsetup)', '# disabled winsetup')
@@ -183,10 +180,6 @@ jobs:
           EOF
           python patch.py
           
-          rm -rf src/duckdb
-          python -c "f='../../duckdb/scripts/package_build.py'; c=open(f).read(); open(f,'w').write(c.replace('os.mkdir(current_path)', 'os.makedirs(current_path, exist_ok=True)'))"
-          python -c "f='vendor.py'; c=open(f).read(); open(f,'w').write(c.replace('source_list.sort()', 'source_list = [x.replace(chr(92), \'/\') for x in source_list]\\nsource_list.sort()').replace('jemalloc_source_list.sort()', 'jemalloc_source_list = [x.replace(chr(92), \'/\') for x in jemalloc_source_list]\\njemalloc_source_list.sort()').replace('include_list.sort()', 'include_list = [x.replace(chr(92), \'/\') for x in include_list]\\ninclude_list.sort()').replace('jemalloc_include_list.sort()', 'jemalloc_include_list = [x.replace(chr(92), \'/\') for x in jemalloc_include_list]\\njemalloc_include_list.sort()'))"
-          python vendor.py --duckdb ../../duckdb
           python -c "f='src/odbc_driver/common/file_io.cpp'; c=open(f).read(); open(f,'w').write(c.replace('file.open(wpath,', 'file.open(wpath.c_str(),'))"
           python ../../patch_thread_safety.py
           python ../../patch_widechar.py
