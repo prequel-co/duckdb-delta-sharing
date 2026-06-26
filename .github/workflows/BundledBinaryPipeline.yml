@@ -10,6 +10,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.head_ref || '' }}-${{ github.base_ref || '' }}-${{ github.ref != 'refs/heads/main' && github.sha || '' }}
   cancel-in-progress: true
 
+env:
+  # single source of truth for the duckdb-odbc release; pairs with the duckdb submodule (tag name v<duckdb-version>.<odbc-patch>)
+  DUCKDB_ODBC_REF: v1.5.4.1
+
 jobs:
   build-binaries:
     name: Build Bundled Binaries
@@ -119,7 +123,7 @@ jobs:
           fi
           git clone https://github.com/duckdb/duckdb-odbc.git build/duckdb-odbc
           cd build/duckdb-odbc
-          git checkout c816687b
+          git checkout "$DUCKDB_ODBC_REF"
           patch -p1 < ../../mac_odbc_fixes.patch
           cat << 'EOF' > patch_static.py
           import os
@@ -133,7 +137,6 @@ jobs:
           c=c.replace('cmake_minimum_required(VERSION 3.5...3.29)', 'cmake_minimum_required(VERSION 3.12...3.29)')
           fetch_block = "include(FetchContent)\nFetchContent_Declare(nlohmann_json URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz)\nFetchContent_MakeAvailable(nlohmann_json)\nFetchContent_Declare(roaring GIT_REPOSITORY https://github.com/RoaringBitmap/CRoaring.git GIT_TAG v4.6.1)\nFetchContent_MakeAvailable(roaring)\nfind_package(CURL REQUIRED)\n"
           c=c.replace('add_subdirectory(src)', fetch_block + 'add_subdirectory(src)')
-          c=c.replace('else()', 'elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")')
           c=c.replace('-DNO_FRAMEWORKS', '-DNO_FRAMEWORKS -DSQL_ATTR_ASYNC_DBC_FUNCTIONS_ENABLE=117 -DSQL_ASYNC_DBC_FUNCTIONS=10023 -DSQL_ASYNC_DBC_NOT_CAPABLE=0')
           c=c.replace('add_subdirectory(test)', '')
           c=c.replace('add_library(duckdb_core_obj OBJECT ${CORE_OBJECT_FILES})', f'include_directories({inc_dir})\nadd_library(duckdb_core_obj OBJECT ' + '${CORE_OBJECT_FILES}' + f' {ext_src})\ntarget_link_libraries(duckdb_core_obj PRIVATE roaring nlohmann_json::nlohmann_json)')
@@ -147,6 +150,13 @@ jobs:
           c2=c2.replace('};', '        "duckdb_delta_sharing",\n    };')
           open(f2,'w').write(c2)
           EOF
+          # guard: the duckdb-odbc tag (DUCKDB_ODBC_REF) must wrap the same duckdb commit our submodule pins
+          odbc_src_id=$(grep -oE '#define DUCKDB_SOURCE_ID "[0-9a-f]+"' src/duckdb/src/function/table/version/pragma_version.cpp | grep -oE '[0-9a-f]{8,}')
+          sub_sha=$(git -C ../../duckdb rev-parse HEAD)
+          case "$sub_sha" in "$odbc_src_id"*) echo "duckdb match: $odbc_src_id" ;; *) echo "duckdb mismatch: DUCKDB_ODBC_REF=$DUCKDB_ODBC_REF wraps $odbc_src_id but submodule is $sub_sha"; exit 1 ;; esac
+          # enable jemalloc on macOS: 1.5.x package_build.py omits jemalloc, so vendor it via the patch that ships with the duckdb-odbc tag
+          patch_file="$(pwd)/local/vendoring/jemalloc_packaging.patch"
+          ( cd ../../duckdb && patch -p1 < "$patch_file" )
           rm -rf src/duckdb
           python3 vendor.py --duckdb ../../duckdb
           python3 patch_static.py
@@ -165,7 +175,7 @@ jobs:
         run: |
           git clone https://github.com/duckdb/duckdb-odbc.git build/duckdb-odbc
           cd build/duckdb-odbc
-          git checkout c816687b
+          git checkout "$DUCKDB_ODBC_REF"
           cat << 'EOF' > patch.py
           import os
           f='CMakeLists.txt.in'
