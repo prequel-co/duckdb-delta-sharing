@@ -14,6 +14,8 @@
 #ifndef DUCKDB_CPP_EXTENSION_ENTRY
 #include "duckdb/main/extension_util.hpp"
 #endif
+#include "duckdb/main/database.hpp"
+#include "duckdb/main/extension_helper.hpp"
 #include "duckdb/main/secret/secret_manager.hpp"
 #include "duckdb/planner/expression/bound_function_expression.hpp"
 #include <nlohmann/json.hpp>
@@ -732,10 +734,20 @@ static void LoadInternal(DUCKDB_DELTA_SHARING_EXTENSION_LOAD_PARAM) {
 		con.Query("LOAD httpfs");
 	}
 
-	auto result_parquet = con.Query("LOAD parquet");
-	if (result_parquet->HasError()) {
-		con.Query("INSTALL parquet");
-		con.Query("LOAD parquet");
+	// Parquet must be registered before we copy read_parquet below.
+	//
+	// Why: SQL `LOAD parquet` only reads .duckdb_extension files from disk. In a
+	// statically linked build this extension can load before parquet at startup
+	// (LoadAllExtensions runs in link order), so the statically linked parquet
+	// must be loaded through ExtensionHelper::LoadExtension instead.
+	if (!instance.ExtensionIsLoaded("parquet")) {
+#ifndef DUCKDB_BUILD_LOADABLE_EXTENSION
+		DuckDB db_wrapper(instance);
+		ExtensionHelper::LoadExtension(db_wrapper, "parquet");
+#endif
+		if (!instance.ExtensionIsLoaded("parquet")) {
+			ExtensionHelper::AutoLoadExtension(instance, "parquet");
+		}
 	}
 
     // Delta Sharing config
