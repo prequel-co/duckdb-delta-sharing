@@ -738,9 +738,19 @@ static void LoadInternal(DUCKDB_DELTA_SHARING_EXTENSION_LOAD_PARAM) {
 		con.Query("LOAD parquet");
 	}
 
+    // Let the Parquet reader detect Delta variant columns structurally.
+    //
+    // Why: Databricks writes variant columns as a plain struct<metadata: BINARY,
+    // value: BINARY> without the Parquet VARIANT logical-type annotation (the
+    // Delta feature predates it), so annotation-based detection alone surfaces a
+    // two-blob struct instead of VARIANT. This flag backs the internal
+    // __delta_only_variant_encoding_enabled setting (not user-adjustable) and is
+    // set the same way by the official duckdb-delta extension.
+    config.options.variant_legacy_encoding = true;
+
     // Delta Sharing config
-    config.AddExtensionOption("delta_sharing_query_telemetry_enabled", "Enable sending full SQL query to server for telemetry", 
-        LogicalType::BOOLEAN, 
+    config.AddExtensionOption("delta_sharing_query_telemetry_enabled", "Enable sending full SQL query to server for telemetry",
+        LogicalType::BOOLEAN,
         Value::BOOLEAN(false));
 
     // Delta Sharing Secrets Registration
