@@ -8,8 +8,7 @@
 			"name": "curl",
 			"platform": "!emscripten & !wasm32"
 		},
-		"nlohmann-json",
-		"roaring"
+		"nlohmann-json"
 	],
 	"vcpkg-configuration": {
 		"overlay-ports": [
