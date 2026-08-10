@@ -99,7 +99,7 @@ export async function runQuery(sql: string): Promise<any[]> {
                 // TypedArrays (like Uint32Array for Decimals) crash when proxied by ArrowJS
                 sanitized[key] = `[${value.constructor.name}]`;
             } else if (typeof value === 'object') {
-                sanitized[key] = JSON.stringify(value, (k, v) => typeof v === 'bigint' ? v.toString() : v);
+                sanitized[key] = JSON.stringify(value, (_, v) => typeof v === 'bigint' ? v.toString() : v);
             } else {
                 sanitized[key] = value;
             }

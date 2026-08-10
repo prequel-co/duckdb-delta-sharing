@@ -1,2 +1,0 @@
-overrides:
-  '@duckdb/duckdb-wasm': link:../duckdb-wasm-fork/packages/duckdb-wasm
