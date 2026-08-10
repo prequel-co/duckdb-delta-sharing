@@ -27,16 +27,23 @@ async function generateSQL() {
     const ai = (window as any).ai;
     const session = await ai.createTextSession();
 
+    const sqlInput = document.getElementById('sql-input') as HTMLTextAreaElement;
+    const currentSql = sqlInput ? sqlInput.value : state.sqlQuery;
+
     // Construct the context prompt
     const prompt = `You are an expert SQL assistant. Given the following request, generate a DuckDB SQL query.
 The table is accessed via delta_share_read('my_share', 'my_schema', 'my_table').
 
 Request: ${state.aiPrompt}
-Current SQL: ${state.sqlQuery}
+Current SQL: ${currentSql}
 
 Return ONLY the raw SQL query without markdown blocks.`;
 
     const generated = await session.prompt(prompt);
+    
+    if (sqlInput) {
+      sqlInput.value = generated.trim();
+    }
     state.sqlQuery = generated.trim();
   } catch (err: any) {
     state.error = 'AI Error: ' + err.message;
@@ -47,11 +54,13 @@ Return ONLY the raw SQL query without markdown blocks.`;
 
 // Execute SQL Query
 async function executeSQL() {
-  console.log("executeSQL started for:", state.sqlQuery);
+  const sqlInput = document.getElementById('sql-input') as HTMLTextAreaElement;
+  const query = sqlInput ? sqlInput.value : state.sqlQuery;
+  console.log("executeSQL started for:", query);
   state.loading = true;
   state.error = '';
   try {
-    const results = await runQuery(state.sqlQuery);
+    const results = await runQuery(query);
     console.log("executeSQL got results:", results);
     state.queryResults = results;
   } catch (err: any) {
@@ -186,7 +195,7 @@ const WorkspaceView = html`
           <span>SQL EDITOR</span>
           <sl-button variant="text" size="small" @click="${executeSQL}" ?loading="${state.loading}">[ RUN ]</sl-button>
         </div>
-        <textarea class="sql-editor" @input="${updateSQLQuery}">${() => state.sqlQuery}</textarea>
+        <textarea id="sql-input" class="sql-editor" @input="${updateSQLQuery}">${state.sqlQuery}</textarea>
       </div>
     </div>
 

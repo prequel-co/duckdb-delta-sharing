@@ -45,7 +45,7 @@ export async function loadDeltaSharingExtension() {
     // Load official dependencies first BEFORE setting custom repo
     await conn.query(`LOAD parquet;`);
     await conn.query(`LOAD json;`);
-    await conn.query(`LOAD httpfs;`);
+    // await conn.query(`LOAD httpfs;`);
     
     // DuckDB WASM expects extensions in a specific repository structure:
     // $repo/$duckdb_version_hash/$duckdb_platform/$name.duckdb_extension.wasm
@@ -85,5 +85,25 @@ export async function setupDeltaSharingFile(fileContent: string) {
 export async function runQuery(sql: string): Promise<any[]> {
     if (!conn) throw new Error("DuckDB not connected");
     const result = await conn.query(sql);
-    return result.toArray().map(row => row.toJSON());
+    const rows = result.toArray().map(row => row.toJSON());
+    
+    // Sanitize results so ArrowJS proxies don't crash on TypedArrays (like DuckDB decimals) or BigInts
+    return rows.map(row => {
+        const sanitized: any = {};
+        for (const [key, value] of Object.entries(row)) {
+            if (value === null || value === undefined) {
+                sanitized[key] = null;
+            } else if (typeof value === 'bigint') {
+                sanitized[key] = value.toString();
+            } else if (ArrayBuffer.isView(value)) {
+                // TypedArrays (like Uint32Array for Decimals) crash when proxied by ArrowJS
+                sanitized[key] = `[${value.constructor.name}]`;
+            } else if (typeof value === 'object') {
+                sanitized[key] = JSON.stringify(value, (k, v) => typeof v === 'bigint' ? v.toString() : v);
+            } else {
+                sanitized[key] = value;
+            }
+        }
+        return sanitized;
+    });
 }
