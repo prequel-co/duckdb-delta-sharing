@@ -55,7 +55,7 @@ export async function initDuckDB() {
     
     // Open the database
     await db.open({
-        // allowUnsignedExtensions: true // Uncomment if using manual builds
+        // allowUnsignedExtensions: true // Uncomment if using manual/unsigned builds
     });
     
     conn = await db.connect();
@@ -70,7 +70,7 @@ export async function initDuckDB() {
 
 The Delta Sharing extension depends on DuckDB's official `parquet` and `json` extensions. You must `LOAD` those first. 
 
-Because `duckdb_delta_sharing` is distributed as an official DuckDB Community Extension, you can load it directly by name. DuckDB WASM will automatically fetch the signed extension from the official repository.
+Because WASM environments don't support installing extensions natively, you need to host the `duckdb_delta_sharing.duckdb_extension.wasm` file alongside your application assets (or on a CDN). You then tell DuckDB where to find it using `custom_extension_repository`.
 
 ```typescript
 export async function loadDeltaSharingExtension() {
@@ -80,17 +80,15 @@ export async function loadDeltaSharingExtension() {
     await conn.query(`LOAD parquet;`);
     await conn.query(`LOAD json;`);
     
-    // 2. Load the community extension
+    // 2. Set the repository path where your extension WASM files are hosted
+    // (In this example, they are hosted at the root of the domain)
+    const origin = window.location.origin;
+    await conn.query(`SET custom_extension_repository='${origin}';`);
+    
+    // 3. Load the extension
     await conn.query(`LOAD duckdb_delta_sharing;`);
 }
 ```
-
-> [!TIP]
-> If you are hosting the extension yourself (e.g. testing local builds), you must set the `custom_extension_repository` path before running `LOAD`.
-> ```sql
-> SET custom_extension_repository='http://localhost:5173/';
-> LOAD duckdb_delta_sharing;
-> ```
 
 ## 3. Authenticating / Configuring a Share
 
