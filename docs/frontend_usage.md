@@ -37,7 +37,7 @@ const MANUAL_BUNDLES: duckdb.DuckDBBundles = {
 };
 ```
 
-Next, instantiate the database. **Crucially**, you must open the database with `allowUnsignedExtensions: true` because the Delta Sharing extension is currently unsigned.
+Next, instantiate the database.
 
 ```typescript
 let db: duckdb.AsyncDuckDB | null = null;
@@ -53,19 +53,24 @@ export async function initDuckDB() {
     db = new duckdb.AsyncDuckDB(logger, worker);
     await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
     
-    // Allow unsigned extensions
-    await db.open({ allowUnsignedExtensions: true });
+    // Open the database
+    await db.open({
+        // allowUnsignedExtensions: true // Uncomment if using manual builds
+    });
     
     conn = await db.connect();
     return db;
 }
 ```
 
+> [!WARNING]
+> If you are building the extension manually or downloading `.wasm` artifacts directly from a GitHub Release, you **must** pass `allowUnsignedExtensions: true` into the `db.open()` configuration. The official Community Extensions are signed and do not require this flag.
+
 ## 2. Loading the Delta Sharing Extension
 
 The Delta Sharing extension depends on DuckDB's official `parquet` and `json` extensions. You must `LOAD` those first. 
 
-Since DuckDB WASM loads extensions over HTTP, you need to tell it where your compiled extension lives by setting the `custom_extension_repository` path. If the extension WASM files are hosted at the root of your domain, you can just use `window.location.origin`.
+Because `duckdb_delta_sharing` is distributed as an official DuckDB Community Extension, you can load it directly by name. DuckDB WASM will automatically fetch the signed extension from the official repository.
 
 ```typescript
 export async function loadDeltaSharingExtension() {
@@ -75,14 +80,17 @@ export async function loadDeltaSharingExtension() {
     await conn.query(`LOAD parquet;`);
     await conn.query(`LOAD json;`);
     
-    // 2. Set the repository path where your extension WASM files are hosted
-    const origin = window.location.origin;
-    await conn.query(`SET custom_extension_repository='${origin}';`);
-    
-    // 3. Load the extension
+    // 2. Load the community extension
     await conn.query(`LOAD duckdb_delta_sharing;`);
 }
 ```
+
+> [!TIP]
+> If you are hosting the extension yourself (e.g. testing local builds), you must set the `custom_extension_repository` path before running `LOAD`.
+> ```sql
+> SET custom_extension_repository='http://localhost:5173/';
+> LOAD duckdb_delta_sharing;
+> ```
 
 ## 3. Authenticating / Configuring a Share
 
@@ -157,5 +165,13 @@ export async function runQuery(sql: string): Promise<any[]> {
     });
 }
 ```
+
+## 5. WebAssembly Limitations
+
+When running DuckDB and the Delta Sharing extension entirely in the browser using WebAssembly, there are several strict limitations to keep in mind:
+
+- **CORS (Cross-Origin Resource Sharing)**: Web browsers enforce strict CORS policies on outgoing HTTP requests. The Delta Sharing server you are connecting to **must** be configured to return valid `Access-Control-Allow-Origin` headers. For example, Databricks Delta Sharing servers often do not support CORS, which means you cannot connect to them directly from a browser-based WASM application without a proxy server.
+- **Memory Limits**: WebAssembly environments typically run in a 32-bit memory space, restricting the maximum available memory (usually between 2GB and 4GB). Operations that require loading massive datasets into memory simultaneously might result in Out of Memory (OOM) crashes in the browser.
+- **Threading**: While DuckDB WASM supports multithreading via Web Workers and `SharedArrayBuffer`, it requires the host web server to return strict security headers (`Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`). Without these headers, DuckDB WASM will fall back to single-threaded execution, severely impacting performance for large queries.
 
 Now you can bind the sanitized data directly to your frontend framework's UI state.
