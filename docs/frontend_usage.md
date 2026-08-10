@@ -53,9 +53,9 @@ export async function initDuckDB() {
     db = new duckdb.AsyncDuckDB(logger, worker);
     await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
     
-    // Open the database
+    // Open the database with configuration allowing unsigned extensions
     await db.open({
-        // allowUnsignedExtensions: true // Uncomment if using manual/unsigned builds
+        allowUnsignedExtensions: true
     });
     
     conn = await db.connect();
