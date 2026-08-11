@@ -10,10 +10,83 @@
 #ifndef __EMSCRIPTEN__
 #include <curl/curl.h>
 #else
-#include <emscripten/fetch.h>
+#include <emscripten.h>
 #endif
 #include <sstream>
 #include <fstream>
+#include <cstdlib>
+
+#ifdef __EMSCRIPTEN__
+EM_JS(char*, perform_sync_xhr, (const char* method_cstr, const char* url_cstr, const char* headers_json_cstr, const char* body_cstr), {
+    var method = UTF8ToString(method_cstr);
+    var url = UTF8ToString(url_cstr);
+    var headers_json = UTF8ToString(headers_json_cstr);
+    var body = UTF8ToString(body_cstr);
+
+    var xhr = new XMLHttpRequest();
+    xhr.open(method, url, false); 
+
+    if (headers_json) {
+        try {
+            var headers = JSON.parse(headers_json);
+            for (var key in headers) {
+                xhr.setRequestHeader(key, headers[key]);
+            }
+        } catch(e) {}
+    }
+
+    try {
+        if (body && body !== "null" && method !== "GET" && method !== "HEAD") {
+            xhr.send(body);
+        } else {
+            xhr.send();
+        }
+    } catch (e) {
+        var errRes = {
+            success: false,
+            status_code: 0,
+            error_message: e.toString(),
+            headers: {},
+            body: ""
+        };
+        var errStr = JSON.stringify(errRes);
+        var errLen = lengthBytesUTF8(errStr) + 1;
+        var errPtr = _malloc(errLen);
+        stringToUTF8(errStr, errPtr, errLen);
+        return errPtr;
+    }
+
+    var responseHeaders = {};
+    var headersStr = xhr.getAllResponseHeaders();
+    if (headersStr) {
+        var lines = headersStr.trim().split('\n');
+        lines.forEach(function(line) {
+            line = line.trim();
+            if (!line) return;
+            var parts = line.split(': ');
+            var key = parts.shift();
+            var value = parts.join(': ');
+            if (key) {
+                responseHeaders[key.toLowerCase()] = value;
+            }
+        });
+    }
+
+    var res = {
+        success: (xhr.status >= 200 && xhr.status < 300),
+        status_code: xhr.status,
+        error_message: "",
+        headers: responseHeaders,
+        body: xhr.responseText || ""
+    };
+    
+    var resStr = JSON.stringify(res);
+    var resLen = lengthBytesUTF8(resStr) + 1;
+    var resPtr = _malloc(resLen);
+    stringToUTF8(resStr, resPtr, resLen);
+    return resPtr;
+});
+#endif
 
 namespace duckdb {
 
@@ -196,33 +269,19 @@ HttpResponse DeltaSharingClient::PerformRequest(
     std::string response_body;
 
 #ifdef __EMSCRIPTEN__
-    // Emscripten WASM builds use emscripten_fetch to execute asynchronous HTTP requests synchronously
-    // without blocking the main browser thread via Asyncify/JS interop.
-    emscripten_fetch_attr_t attr;
-    emscripten_fetch_attr_init(&attr);
-    strcpy(attr.requestMethod, method.c_str());
-    attr.attributes = EMSCRIPTEN_FETCH_LOAD_TO_MEMORY | EMSCRIPTEN_FETCH_SYNCHRONOUS;
+    json headers_json;
+    headers_json["Authorization"] = "Bearer " + profile_.bearer_token;
+    headers_json["Content-Type"] = "application/json";
+    headers_json["Accept"] = "application/x-ndjson,application/json";
+    headers_json["delta-sharing-capabilities"] = "responseformat=delta;readerfeatures=deletionvectors,columnmapping,timestampntz";
 
-    std::vector<const char*> headers;
-    std::string auth_header = "Bearer " + profile_.bearer_token;
-    headers.push_back("Authorization");
-    headers.push_back(auth_header.c_str());
-    headers.push_back("Content-Type");
-    headers.push_back("application/json");
-    headers.push_back("User-Agent");
-    headers.push_back("delta-sharing-spark/3.1.0");
-    headers.push_back("Accept");
-    headers.push_back("application/x-ndjson,application/json");
-    headers.push_back("delta-sharing-capabilities");
-    headers.push_back("responseformat=delta;readerfeatures=deletionvectors,columnmapping,timestampntz");
-
-    std::string telemetry_encoded;
     if (profile_.query_telemetry_enabled && !profile_.current_query.empty()) {
         std::string query = profile_.current_query;
         if (query.length() > 2048) {
             query = query.substr(0, 2048);
         }
         static const char* lookup = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        std::string telemetry_encoded;
         int val = 0, valb = -6;
         for (unsigned char c : query) {
             val = (val << 8) + c;
@@ -235,55 +294,46 @@ HttpResponse DeltaSharingClient::PerformRequest(
         if (valb > -6) telemetry_encoded.push_back(lookup[((val << 8) >> (valb + 8)) & 0x3F]);
         while (telemetry_encoded.size() % 4) telemetry_encoded.push_back('=');
 
-        headers.push_back("delta-sharing-query-sql");
-        headers.push_back(telemetry_encoded.c_str());
+        headers_json["delta-sharing-query-sql"] = telemetry_encoded;
     }
-    headers.push_back(nullptr);
-    attr.requestHeaders = headers.data();
 
+    std::string post_data_str = post_data;
     if (method == "POST") {
-        if (post_data.empty() || post_data == "null") {
-            attr.requestData = "{}";
-            attr.requestDataSize = 2;
-        } else {
-            attr.requestData = post_data.c_str();
-            attr.requestDataSize = post_data.length();
+        if (post_data_str.empty() || post_data_str == "null") {
+            post_data_str = "{}";
         }
     }
 
-    emscripten_fetch_t *fetch = emscripten_fetch(&attr, url.c_str());
-    response.status_code = fetch->status;
-    response.success = (fetch->status >= 200 && fetch->status < 300);
+    char* resPtr = perform_sync_xhr(
+        method.c_str(), 
+        url.c_str(), 
+        headers_json.dump().c_str(), 
+        post_data_str.c_str()
+    );
 
-    if (fetch->data && fetch->numBytes > 0) {
-        response_body = std::string(fetch->data, fetch->numBytes);
-    } else if (!response.success) {
-        response.error_message = "HTTP error " + std::to_string(fetch->status);
-    }
+    if (resPtr) {
+        try {
+            auto resObj = json::parse(resPtr);
+            response.success = resObj.value("success", false);
+            response.status_code = resObj.value("status_code", 0);
+            response.error_message = resObj.value("error_message", "");
+            response_body = resObj.value("body", "");
+            response.body = response_body;
 
-    size_t header_len = emscripten_fetch_get_response_headers_length(fetch);
-    if (header_len > 0) {
-        std::string all_headers(header_len, '\0');
-        emscripten_fetch_get_response_headers(fetch, &all_headers[0], header_len);
-        std::istringstream stream(all_headers);
-        std::string header_line;
-        while (std::getline(stream, header_line)) {
-            auto colon_pos = header_line.find(':');
-            if (colon_pos != std::string::npos) {
-                std::string key = header_line.substr(0, colon_pos);
-                std::string value = header_line.substr(colon_pos + 1);
-                key.erase(0, key.find_first_not_of(" \t\r\n"));
-                key.erase(key.find_last_not_of(" \t\r\n") + 1);
-                value.erase(0, value.find_first_not_of(" \t\r\n"));
-                value.erase(value.find_last_not_of(" \t\r\n") + 1);
-                std::transform(key.begin(), key.end(), key.begin(), ::tolower);
-                response.headers[key] = value;
+            if (resObj.contains("headers") && resObj["headers"].is_object()) {
+                for (auto& [key, value] : resObj["headers"].items()) {
+                    response.headers[key] = value.get<std::string>();
+                }
             }
+        } catch (...) {
+            response.success = false;
+            response.error_message = "Failed to parse XHR JSON response";
         }
+        std::free(resPtr);
+    } else {
+        response.success = false;
+        response.error_message = "XHR returned null pointer";
     }
-
-    emscripten_fetch_close(fetch);
-    response.body = response_body;
 
 #else
     CURL *curl = (CURL *)curl_;
