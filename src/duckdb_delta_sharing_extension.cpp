@@ -14,6 +14,8 @@
 #ifndef DUCKDB_CPP_EXTENSION_ENTRY
 #include "duckdb/main/extension_util.hpp"
 #endif
+#include "duckdb/main/database.hpp"
+#include "duckdb/main/extension_helper.hpp"
 #include "duckdb/main/secret/secret_manager.hpp"
 #include "duckdb/planner/expression/bound_function_expression.hpp"
 #include <nlohmann/json.hpp>
@@ -724,19 +726,41 @@ static void LoadInternal(DUCKDB_DELTA_SHARING_EXTENSION_LOAD_PARAM) {
     auto &instance = DUCKDB_GET_DATABASE_INSTANCE(db);
     auto &config = DBConfig::GetConfig(instance);
 
-	// Delta Sharing required extensions
-    Connection con(instance);
-	auto result = con.Query("LOAD httpfs");
-	if (result->HasError()) {
-		con.Query("INSTALL httpfs");
-		con.Query("LOAD httpfs");
-	}
+	// Delta Sharing required extensions: load them eagerly, without SQL `LOAD`.
+	//
+	// Why: SQL `LOAD` only reads .duckdb_extension files from disk. In a
+	// statically linked build this extension can load before its dependencies
+	// at startup (LoadAllExtensions runs in link order), so statically linked
+	// dependencies must be loaded through ExtensionHelper::LoadExtension, with
+	// disk-based autoload as the fallback for loadable builds.
+	//
+	// required rule:
+	//   required=true  → throw when unavailable (unusable without it)
+	//   required=false → best effort; DuckDB can still autoload it at query time
+	auto ensure_extension_loaded = [&instance](const string &ext_name, bool required) {
+		if (instance.ExtensionIsLoaded(ext_name)) {
+			return;
+		}
+#ifndef DUCKDB_BUILD_LOADABLE_EXTENSION
+		DuckDB db_wrapper(instance);
+		ExtensionHelper::LoadExtension(db_wrapper, ext_name);
+		if (instance.ExtensionIsLoaded(ext_name)) {
+			return;
+		}
+#endif
+		if (required) {
+			ExtensionHelper::AutoLoadExtension(instance, ext_name);
+		} else {
+			ExtensionHelper::TryAutoLoadExtension(instance, ext_name);
+		}
+	};
+	// httpfs is only needed once a query opens an https:// path, and it is in
+	// DuckDB's autoload set — never fail extension load over it.
+	ensure_extension_loaded("httpfs", false);
+	// read_parquet is copied below, so parquet must be registered right now.
+	ensure_extension_loaded("parquet", true);
 
-	auto result_parquet = con.Query("LOAD parquet");
-	if (result_parquet->HasError()) {
-		con.Query("INSTALL parquet");
-		con.Query("LOAD parquet");
-	}
+	Connection con(instance);
 
     // Let the Parquet reader detect Delta variant columns structurally.
     //
