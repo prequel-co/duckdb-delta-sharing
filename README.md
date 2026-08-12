@@ -92,6 +92,7 @@ LIMIT 100;
 Traditional Delta Sharing clients often rely on heavy frameworks like Spark. This extension allows **DuckDB**—the world's fastest analytical database—to pull those files directly into its memory. It handles:
 - **Partition Discovery**: Automatically mapping folder structures to columns.
 - **Deletion Vectors**: Handling row-level deletes without rewriting files.
+- **Variant Columns**: Reading Delta `variantType` / `variantType-preview` tables as DuckDB's native `VARIANT` type.
 - **Schema Evolution**: Safely mapping Delta types to DuckDB's native types.
 
 ---

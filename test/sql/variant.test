@@ -1,0 +1,32 @@
+# name: test/sql/variant.test
+# description: Delta variantType support: loading the extension enables structural
+#              variant detection, so unannotated struct<metadata, value> columns
+#              (as written by Databricks) decode as DuckDB VARIANT.
+# group: [sql]
+
+require parquet
+
+require duckdb_delta_sharing
+
+# Loading the extension must flip the internal parquet-reader setting
+query I
+select current_setting('__delta_only_variant_encoding_enabled');
+----
+true
+
+# Fixture is a plain struct<metadata: BINARY, value: BINARY> with NO Parquet
+# VARIANT logical-type annotation; contents follow the Variant Binary Encoding
+# spec. With the setting on it must surface as VARIANT, not a two-blob struct.
+query I
+select typeof(v) from read_parquet('test/data/variant_unannotated.parquet') limit 1;
+----
+VARIANT
+
+query II
+select id, v::VARCHAR from read_parquet('test/data/variant_unannotated.parquet') order by id;
+----
+1	42
+2	hello
+3	true
+4	{'a': 1, 'b': x}
+5	NULL

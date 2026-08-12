@@ -95,6 +95,14 @@ using json = nlohmann::json;
 #include <algorithm>
 #include <map>
 
+// Reader features declared to the server during capability negotiation.
+// Servers reject queries against tables whose reader features are not all
+// covered by this list (e.g. Databricks DS_UNSUPPORTED_DELTA_TABLE_FEATURES).
+// Both variant spellings are required: Databricks writes `varianttype-preview`
+// (pre-standardization), newer writers use the finalized `varianttype`.
+static constexpr const char *DELTA_SHARING_CAPABILITIES =
+    "responseformat=delta;readerfeatures=deletionvectors,columnmapping,timestampntz,varianttype-preview,varianttype";
+
 #ifndef __EMSCRIPTEN__
 // Callback for libcurl to write response data
 static size_t WriteCallback(void *contents, size_t size, size_t nmemb, void *userp) {
@@ -273,7 +281,7 @@ HttpResponse DeltaSharingClient::PerformRequest(
     headers_json["Authorization"] = "Bearer " + profile_.bearer_token;
     headers_json["Content-Type"] = "application/json";
     headers_json["Accept"] = "application/x-ndjson,application/json";
-    headers_json["delta-sharing-capabilities"] = "responseformat=delta;readerfeatures=deletionvectors,columnmapping,timestampntz";
+    headers_json["delta-sharing-capabilities"] = DELTA_SHARING_CAPABILITIES;
 
     if (profile_.query_telemetry_enabled && !profile_.current_query.empty()) {
         std::string query = profile_.current_query;
@@ -364,7 +372,8 @@ HttpResponse DeltaSharingClient::PerformRequest(
     headers = curl_slist_append(headers, "Content-Type: application/json");
     headers = curl_slist_append(headers, "User-Agent: delta-sharing-spark/3.1.0");
     headers = curl_slist_append(headers, "Accept: application/x-ndjson,application/json");
-    headers = curl_slist_append(headers, "delta-sharing-capabilities: responseformat=delta;readerfeatures=deletionvectors,columnmapping,timestampntz");
+    std::string capabilities_header = std::string("delta-sharing-capabilities: ") + DELTA_SHARING_CAPABILITIES;
+    headers = curl_slist_append(headers, capabilities_header.c_str());
 
     if (profile_.query_telemetry_enabled && !profile_.current_query.empty()) {
         std::string query = profile_.current_query;
