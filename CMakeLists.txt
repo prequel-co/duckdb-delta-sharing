@@ -40,6 +40,9 @@ if(CROARING_INCLUDE_DIR AND CROARING_LIBRARY)
 elseif(TARGET roaring::roaring)
     # Target already provided via VCPKG or config
 else()
+    set(ENABLE_ROARING_TESTS OFF CACHE BOOL "Disable roaring tests" FORCE)
+    set(ENABLE_ROARING_BENCHMARKS OFF CACHE BOOL "Disable roaring benchmarks" FORCE)
+    set(ENABLE_ROARING_MICROBENCHMARKS OFF CACHE BOOL "Disable roaring microbenchmarks" FORCE)
     include(FetchContent)
     FetchContent_Declare(
         roaring
