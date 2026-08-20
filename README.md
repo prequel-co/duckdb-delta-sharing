@@ -138,6 +138,15 @@ When enabled (`false` by default), the extension sends a Base64-encoded snippet 
 > [!WARNING]
 > **Privacy Note**: If you enable telemetry and use hard-coded literals (e.g., `WHERE email = 'user@example.com'`) instead of parameters, those literals will be included in the telemetry header. If privacy is a concern, keep `delta_sharing_query_telemetry_enabled` set to `false`.
 
+### 🔐 TLS Certificates
+Statically linked builds of libcurl look for certificates where the machine that built them kept them, so the extension picks the trust store at runtime instead — a build produced on one Linux distribution keeps working on another. It uses the first match:
+
+1. `ca_cert_file` — DuckDB's own setting, e.g. `SET ca_cert_file = '/path/to/roots.pem'`
+2. The standard per-distro bundles: `/etc/ssl/certs/ca-certificates.crt` (Debian-based, Arch, Gentoo), `/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem` (RedHat 7), `/etc/pki/tls/certs/ca-bundle.crt` (RedHat 6), `/etc/ssl/ca-bundle.pem` (openSUSE), `/etc/ssl/cert.pem` (Alpine, macOS, \*BSD)
+3. Otherwise libcurl's own default, plus the OS trust store where the platform provides one (Windows)
+
+This is the same list, order, and `ca_cert_file` precedence that `httpfs` uses, so the sharing API calls made by this extension and the data files fetched by `httpfs` always trust the same store. If certificates live somewhere non-standard (custom images, corporate roots), `SET ca_cert_file` covers both. TLS failures report which certificate file was in use.
+
 ---
 
 ## 🤝 Developed by Prequel

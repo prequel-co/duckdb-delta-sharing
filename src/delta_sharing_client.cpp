@@ -131,6 +131,66 @@ static size_t HeaderCallback(void *contents, size_t size, size_t nmemb, void *us
     }
     return total_size;
 }
+
+namespace {
+
+// Statically compiled libcurl looks for certificates where the *build* host kept
+// them — `/etc/pki/tls/certs/ca-bundle.crt` on the manylinux CI images — so on a
+// distro with another layout (Debian's `/etc/ssl/certs/ca-certificates.crt`) every
+// request fails with `error adding trust anchors`. Search the common locations and
+// use the first one that exists.
+//
+// Same list, same order, same fallback as duckdb-httpfs' curl client
+// (`CERT_FILE_LOCATIONS` / `SelectCURLCertPath` in src/http/httpfs_curl_client.cpp),
+// so both extensions end up trusting the same store: this extension makes the
+// sharing API calls, httpfs fetches the data files those calls point at.
+constexpr const char *CERT_FILE_LOCATIONS[] = {
+    // Arch, Debian-based, Gentoo
+    "/etc/ssl/certs/ca-certificates.crt",
+    // RedHat 7 based
+    "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",
+    // Redhat 6 based
+    "/etc/pki/tls/certs/ca-bundle.crt",
+    // OpenSUSE
+    "/etc/ssl/ca-bundle.pem",
+    // Alpine
+    "/etc/ssl/cert.pem",
+};
+
+//! Grab the first path that exists, from a list of well-known locations
+const std::string &SelectCertPath() {
+    static const std::string selected = []() -> std::string {
+        auto fs = FileSystem::CreateLocal();
+        for (const char *ca_file : CERT_FILE_LOCATIONS) {
+            if (fs->FileExists(ca_file)) {
+                return ca_file;
+            }
+        }
+        return std::string();
+    }();
+    return selected;
+}
+
+// A `ca_cert_file` set in the session outranks the probe, as in httpfs.
+const std::string &EffectiveCertPath(const std::string &ca_cert_file) {
+    return ca_cert_file.empty() ? SelectCertPath() : ca_cert_file;
+}
+
+void ApplyCertPath(CURL *curl, const std::string &ca_cert_file) {
+    const auto &cert_path = EffectiveCertPath(ca_cert_file);
+    if (!cert_path.empty()) {
+        curl_easy_setopt(curl, CURLOPT_CAINFO, cert_path.c_str());
+        return;
+    }
+#if LIBCURL_VERSION_NUM >= 0x074700 // 7.71.0
+    // No bundle anywhere (Windows has none of the paths above): fall back to the OS
+    // trust store. Only when no file was found — a chosen certificate file must be
+    // able to fail, not silently fall through to the native store (duckdb-httpfs#337).
+    curl_easy_setopt(curl, CURLOPT_SSL_OPTIONS, CURLSSLOPT_NATIVE_CA);
+#endif
+}
+
+} // namespace
 #endif
 
 static std::string GetNextPageLink(const std::map<std::string, std::string>& headers) {
@@ -215,6 +275,12 @@ DeltaSharingProfile DeltaSharingProfile::FromConfig(ClientContext &context) {
         !telemetry_enabled_value.IsNull()) {
         profile.query_telemetry_enabled = telemetry_enabled_value.GetValue<bool>();
     }
+    profile.ca_cert_file = "";
+    Value ca_cert_value;
+    if (context.TryGetCurrentSetting("ca_cert_file", ca_cert_value) && !ca_cert_value.IsNull()) {
+        profile.ca_cert_file = ca_cert_value.ToString();
+    }
+
     profile.current_query = "";
     if (profile.query_telemetry_enabled) {
         // Note: active_query is null during the Bind phase in database/sql, which throws an InternalException.
@@ -242,6 +308,7 @@ DeltaSharingClient::DeltaSharingClient(const DeltaSharingProfile &profile)
     if (!curl_) {
         throw InternalException("DeltaSharingClient error: Failed to initialize CURL");
     }
+    ApplyCertPath((CURL *)curl_, profile_.ca_cert_file);
 #else
     curl_ = nullptr;
 #endif
@@ -429,6 +496,13 @@ HttpResponse DeltaSharingClient::PerformRequest(
             response.error_message = std::string(curl_easy_strerror(res)) + " - " + std::string(errbuf);
         } else {
             response.error_message = curl_easy_strerror(res);
+        }
+        if (res == CURLE_SSL_CONNECT_ERROR || res == CURLE_SSL_CERTPROBLEM ||
+            res == CURLE_PEER_FAILED_VERIFICATION || res == CURLE_SSL_CACERT_BADFILE) {
+            const auto &cert_path = EffectiveCertPath(profile_.ca_cert_file);
+            response.error_message += " (certificate file: " +
+                                      (cert_path.empty() ? "libcurl built-in default" : cert_path) +
+                                      "; override it with the ca_cert_file setting)";
         }
         response.success = false;
         return response;
