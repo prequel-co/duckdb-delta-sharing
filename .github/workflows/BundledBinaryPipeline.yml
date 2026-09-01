@@ -184,13 +184,7 @@ jobs:
           c=open(f).read()
           c=c.replace('cmake_minimum_required(VERSION 3.5...3.29)', 'cmake_minimum_required(VERSION 3.12...3.29)')
           c=c.replace('add_subdirectory(winsetup)', '# disabled winsetup')
-          fetch_block = """include(FetchContent)
-FetchContent_Declare(nlohmann_json URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz)
-FetchContent_MakeAvailable(nlohmann_json)
-FetchContent_Declare(roaring GIT_REPOSITORY https://github.com/RoaringBitmap/CRoaring.git GIT_TAG v4.6.1)
-FetchContent_MakeAvailable(roaring)
-find_package(CURL REQUIRED)
-"""
+          fetch_block = "include(FetchContent)\nFetchContent_Declare(nlohmann_json URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz)\nFetchContent_MakeAvailable(nlohmann_json)\nset(ENABLE_ROARING_TESTS OFF CACHE BOOL \"\" FORCE)\nset(ENABLE_ROARING_BENCHMARKS OFF CACHE BOOL \"\" FORCE)\nFetchContent_Declare(roaring GIT_REPOSITORY https://github.com/RoaringBitmap/CRoaring.git GIT_TAG v4.6.1)\nFetchContent_MakeAvailable(roaring)\nfind_package(CURL REQUIRED)\n"
           c=c.replace('add_subdirectory(src)', fetch_block + 'add_subdirectory(src)')
           c=c.replace('add_subdirectory(test)', '')
           c=c.replace('add_library(duckdb_core_obj OBJECT ${CORE_OBJECT_FILES})', f'include_directories({inc_dir})\nadd_library(duckdb_core_obj OBJECT ' + '${CORE_OBJECT_FILES}' + f' {ext_src})\ntarget_link_libraries(duckdb_core_obj PRIVATE roaring nlohmann_json::nlohmann_json)')
