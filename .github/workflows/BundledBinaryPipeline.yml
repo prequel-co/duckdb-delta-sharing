@@ -166,27 +166,45 @@ jobs:
           git clone https://github.com/duckdb/duckdb-odbc.git build/duckdb-odbc
           cd build/duckdb-odbc
           git checkout c816687b
-          cat << 'EOF' > patch.py
-          import os
-          f='CMakeLists.txt.in'
-          c=open(f).read()
-          c=c.replace('/bigobj', '-Wa,-mbig-obj')
-          c=c.replace('add_subdirectory(winsetup)', '# disabled winsetup')
-          c=c.replace('legacy_stdio_definitions', 'ws2_32> $<$<PLATFORM_ID:Windows>:rstrtmgr> $<$<PLATFORM_ID:Windows>:bcrypt> $<$<PLATFORM_ID:Windows>:crypt32')
-          open(f,'w').write(c)
-
-          f2='test/CMakeLists.txt'
-          if os.path.exists(f2):
-              c2=open(f2).read()
-              c2=c2.replace('/bigobj', '-Wa,-mbig-obj')
-              open(f2,'w').write(c2)
-          EOF
-          python patch.py
+          patch -p1 < ../../mac_odbc_fixes.patch
           
           rm -rf src/duckdb
           python -c "f='../../duckdb/scripts/package_build.py'; c=open(f).read(); open(f,'w').write(c.replace('os.mkdir(current_path)', 'os.makedirs(current_path, exist_ok=True)'))"
           python -c "f='vendor.py'; c=open(f).read(); open(f,'w').write(c.replace('source_list.sort()', 'source_list = [x.replace(chr(92), \'/\') for x in source_list]\\nsource_list.sort()').replace('jemalloc_source_list.sort()', 'jemalloc_source_list = [x.replace(chr(92), \'/\') for x in jemalloc_source_list]\\njemalloc_source_list.sort()').replace('include_list.sort()', 'include_list = [x.replace(chr(92), \'/\') for x in include_list]\\ninclude_list.sort()').replace('jemalloc_include_list.sort()', 'jemalloc_include_list = [x.replace(chr(92), \'/\') for x in jemalloc_include_list]\\njemalloc_include_list.sort()'))"
           python vendor.py --duckdb ../../duckdb
+          
+          cat << 'EOF' > patch_static.py
+          import os
+          workspace = os.path.abspath("../..").replace('\\', '/')
+          src_files = [f"{workspace}/src/{f}" for f in ["delta_share_multi_file_reader.cpp", "delta_sharing_client.cpp", "delta_sharing_json.cpp", "duckdb_delta_sharing_extension.cpp", "duckdb_delta_sharing_functions.cpp"]]
+          ext_src = " " + " ".join(src_files)
+          inc_dir = f"{workspace}/src/include"
+
+          f='CMakeLists.txt'
+          c=open(f).read()
+          c=c.replace('cmake_minimum_required(VERSION 3.5...3.29)', 'cmake_minimum_required(VERSION 3.12...3.29)')
+          c=c.replace('add_subdirectory(winsetup)', '# disabled winsetup')
+          fetch_block = """include(FetchContent)
+FetchContent_Declare(nlohmann_json URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz)
+FetchContent_MakeAvailable(nlohmann_json)
+FetchContent_Declare(roaring GIT_REPOSITORY https://github.com/RoaringBitmap/CRoaring.git GIT_TAG v4.6.1)
+FetchContent_MakeAvailable(roaring)
+find_package(CURL REQUIRED)
+"""
+          c=c.replace('add_subdirectory(src)', fetch_block + 'add_subdirectory(src)')
+          c=c.replace('add_subdirectory(test)', '')
+          c=c.replace('add_library(duckdb_core_obj OBJECT ${CORE_OBJECT_FILES})', f'include_directories({inc_dir})\nadd_library(duckdb_core_obj OBJECT ' + '${CORE_OBJECT_FILES}' + f' {ext_src})\ntarget_link_libraries(duckdb_core_obj PRIVATE roaring nlohmann_json::nlohmann_json)')
+          c=c.replace('target_link_libraries(duckdb_odbc ${LINK_LIB_LIST} )', 'target_link_libraries(duckdb_odbc ${LINK_LIB_LIST} roaring nlohmann_json::nlohmann_json CURL::libcurl ws2_32 crypt32 bcrypt rstrtmgr)')
+          open(f,'w').write(c)
+
+          f2='src/duckdb/generated_extension_loader_package_build.cpp'
+          c2=open(f2).read()
+          c2=c2.replace('#include "duckdb/main/extension/generated_extension_loader.hpp"', f'#include "{inc_dir}/duckdb_delta_sharing_extension.hpp"\n#include "duckdb/main/extension/generated_extension_loader.hpp"')
+          c2=c2.replace('return ExtensionLoadResult::NOT_LOADED;', '    if (extension=="duckdb_delta_sharing") {\n        db.LoadStaticExtension<DuckdbDeltaSharingExtension>();\n        return ExtensionLoadResult::LOADED_EXTENSION;\n    }\n    return ExtensionLoadResult::NOT_LOADED;')
+          c2=c2.replace('};', '        "duckdb_delta_sharing",\n    };')
+          open(f2,'w').write(c2)
+          EOF
+          python patch_static.py
           python -c "f='src/odbc_driver/common/file_io.cpp'; c=open(f).read(); open(f,'w').write(c.replace('file.open(wpath,', 'file.open(wpath.c_str(),'))"
           python ../../patch_thread_safety.py
           python ../../patch_widechar.py
@@ -196,9 +214,6 @@ jobs:
           cd build/release
           cmake -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" ../..
           cmake --build . --config Release
-
-
-
 
       - name: Compress Artifacts
         shell: bash
@@ -233,19 +248,29 @@ jobs:
         with:
           name: duckdb-osx_arm64
           path: bin_arm64
-      - name: Create Universal Binary
+      - name: Create Universal Binary & Libraries
         run: |
-          lipo -create -output duckdb bin_x64/duckdb bin_arm64/duckdb
-          chmod +x duckdb
+          mkdir -p universal_bin
+          if [ -f bin_x64/duckdb ] && [ -f bin_arm64/duckdb ]; then
+            lipo -create -output universal_bin/duckdb bin_x64/duckdb bin_arm64/duckdb
+            chmod +x universal_bin/duckdb
+          fi
+
+          dylib_x64=$(find bin_x64 -name "*duckdb_odbc*.dylib" | head -n 1)
+          dylib_arm64=$(find bin_arm64 -name "*duckdb_odbc*.dylib" | head -n 1)
+          if [ -n "$dylib_x64" ] && [ -n "$dylib_arm64" ]; then
+            dylib_name=$(basename "$dylib_x64")
+            lipo -create -output "universal_bin/$dylib_name" "$dylib_x64" "$dylib_arm64"
+          fi
+
+          cd universal_bin
+          tar -czf ../duckdb-osx_universal.tar.gz .
+
       - name: Upload Universal Binary
         uses: actions/upload-artifact@v4
         with:
           name: duckdb-osx_universal
-          path: duckdb
-
-      - name: Compress Artifacts
-        run: |
-          tar -czf duckdb-osx_universal.tar.gz duckdb
+          path: universal_bin/*
 
       - name: Upload Compressed Artifact
         uses: actions/upload-artifact@v4
