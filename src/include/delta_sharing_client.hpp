@@ -2,6 +2,7 @@
 
 #include "duckdb.hpp"
 #include "delta_sharing_json.hpp"
+#include "delta_sharing_secret_resolution.hpp"
 #include <string>
 #include <vector>
 #include <memory>
@@ -21,6 +22,7 @@ struct DeltaSharingProfile {
     std::string ca_cert_file;
 
     static DeltaSharingProfile FromConfig(ClientContext &context);
+    static DeltaSharingProfile FromConfig(ClientContext &context, const DeltaSharingSecretRequest &request);
 };
 
 // Delta Sharing API response structures

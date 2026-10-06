@@ -124,7 +124,7 @@ jobs:
           cat << 'EOF' > patch_static.py
           import os
           workspace = os.path.abspath("../..")
-          src_files = [os.path.join(workspace, "src", f) for f in ["delta_share_multi_file_reader.cpp", "delta_sharing_client.cpp", "delta_sharing_json.cpp", "duckdb_delta_sharing_extension.cpp", "duckdb_delta_sharing_functions.cpp"]]
+          src_files = [os.path.join(workspace, "src", f) for f in ["delta_share_multi_file_reader.cpp", "delta_sharing_client.cpp", "delta_sharing_json.cpp", "delta_sharing_secret_resolution.cpp", "duckdb_delta_sharing_extension.cpp", "duckdb_delta_sharing_functions.cpp"]]
           ext_src = " " + " ".join(src_files)
           inc_dir = os.path.join(workspace, "src", "include")
           
@@ -176,7 +176,7 @@ jobs:
           cat << 'EOF' > patch_static.py
           import os
           workspace = os.path.abspath("../..").replace('\\', '/')
-          src_files = [f"{workspace}/src/{f}" for f in ["delta_share_multi_file_reader.cpp", "delta_sharing_client.cpp", "delta_sharing_json.cpp", "duckdb_delta_sharing_extension.cpp", "duckdb_delta_sharing_functions.cpp"]]
+          src_files = [f"{workspace}/src/{f}" for f in ["delta_share_multi_file_reader.cpp", "delta_sharing_client.cpp", "delta_sharing_json.cpp", "delta_sharing_secret_resolution.cpp", "duckdb_delta_sharing_extension.cpp", "duckdb_delta_sharing_functions.cpp"]]
           ext_src = " " + " ".join(src_files)
           inc_dir = f"{workspace}/src/include"
 

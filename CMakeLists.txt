@@ -62,6 +62,7 @@ set(EXTENSION_SOURCES
     src/duckdb_delta_sharing_functions.cpp
     src/delta_share_multi_file_reader.cpp
     src/delta_sharing_client.cpp
+    src/delta_sharing_secret_resolution.cpp
     src/delta_sharing_json.cpp
 )
 

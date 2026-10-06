@@ -212,34 +212,16 @@ static std::string GetNextPageLink(const std::map<std::string, std::string>& hea
 
 // DeltaSharingProfile implementation
 DeltaSharingProfile DeltaSharingProfile::FromConfig(ClientContext &context) {
+    return FromConfig(context, DeltaSharingSecretRequest());
+}
+
+DeltaSharingProfile DeltaSharingProfile::FromConfig(ClientContext &context, const DeltaSharingSecretRequest &request) {
     DeltaSharingProfile profile;
 
-    auto &sm = SecretManager::Get(context);
-    auto trans = CatalogTransaction::GetSystemCatalogTransaction(context);
-    auto secrets = sm.AllSecrets(trans);
-    const KeyValueSecret *ds_secret = nullptr;
-    for (auto &sec : secrets) {
-        if (sec.secret && sec.secret->GetType() == "delta_sharing") {
-            ds_secret = dynamic_cast<const KeyValueSecret*>(sec.secret.get());
-        }
-    }
+    auto resolved = ResolveDeltaSharingSecret(context, request);
+    const KeyValueSecret *ds_secret = &resolved.Secret();
 
-    if (!ds_secret) {
-        throw InvalidConfigurationException("LoadProfile error: Please configure Delta Sharing via a secret: CREATE SECRET (TYPE delta_sharing, PROVIDER config, ENDPOINT '...', BEARER_TOKEN '...') or CREATE SECRET (TYPE delta_sharing, PROVIDER env)");
-    }
-    
-    Value endpoint_value;
-    bool has_endpoint = false;
-    try {
-        endpoint_value = ds_secret->TryGetValue("endpoint", false);
-        has_endpoint = !endpoint_value.IsNull() && !endpoint_value.ToString().empty();
-    } catch (...) {}
-
-    if (has_endpoint) {
-        profile.endpoint = endpoint_value.ToString();
-    } else {
-        throw InvalidConfigurationException("LoadProfile error: Please configure Delta Sharing via a secret: CREATE SECRET (TYPE delta_sharing, PROVIDER config, ENDPOINT '...', BEARER_TOKEN '...') or CREATE SECRET (TYPE delta_sharing, PROVIDER env)");
-    }
+    profile.endpoint = resolved.endpoint;
 
     Value token_value;
     bool has_token = false;

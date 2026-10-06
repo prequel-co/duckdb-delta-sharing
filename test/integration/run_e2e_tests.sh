@@ -62,6 +62,34 @@ if ! echo "$ORDERS_DESC" | grep -q "order_payment_method"; then
     exit 1
 fi
 
+echo ""
+echo "Testing secret := reaches the inner read_parquet bind (via delta_share_read)..."
+echo "---------------------------------------------------------"
+
+# An unnamed secret is named __default_delta_sharing; secret := must be
+# stripped before the inner read_parquet bind, which DESCRIBE reaches.
+QUERY_ORDERS_DESC_SECRET="
+LOAD '${EXT_PATH}';
+LOAD httpfs;
+CREATE SECRET (TYPE delta_sharing, PROVIDER config, ENDPOINT '${DB_ENDPOINT}', BEARER_TOKEN '${DB_TOKEN}');
+
+DESCRIBE SELECT * FROM delta_share_read('${SHARE}', '${SCHEMA}', 'orders', secret := '__default_delta_sharing');
+"
+
+echo "Describing orders table via secret := to verify schema mapping..."
+ORDERS_DESC_SECRET=$($DUCKDB_PATH -unsigned -c "$QUERY_ORDERS_DESC_SECRET")
+echo "$ORDERS_DESC_SECRET"
+
+if echo "$ORDERS_DESC_SECRET" | grep -q "col-"; then
+    echo "ERROR: Found physical column names in logical schema via secret :=! Column mapping failed."
+    exit 1
+fi
+
+if ! echo "$ORDERS_DESC_SECRET" | grep -q "order_payment_method"; then
+    echo "ERROR: Missing added logical column 'order_payment_method' via secret :=! Column mapping failed."
+    exit 1
+fi
+
 QUERY_ORDERS="
 LOAD '${EXT_PATH}';
 LOAD httpfs;
