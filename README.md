@@ -160,6 +160,8 @@ FROM delta_share_change_data_feed('my_share', 'my_schema', 'my_table', '2024-04-
 | `ENDPOINT` | `VARCHAR` | Base URL of the Delta Sharing server (Secret key) | |
 | `BEARER_TOKEN` | `VARCHAR` | Secret JWT token for authentication (Secret key) | |
 | `delta_sharing_query_telemetry_enabled` | `BOOLEAN` | Whether to send your SQL to the server for telemetry | `false` |
+| `delta_sharing_max_pages` | `UBIGINT` | Most pages one listing or query may take before it fails (`0` = no limit) | `1000` |
+| `http_timeout` | `UBIGINT` | `httpfs`' setting, in seconds: how long a connection attempt, or a transfer moving under 1 KB/s, may take before the request fails | `30` |
 
 ### 📊 Query Telemetry
 When enabled (`false` by default), the extension sends a Base64-encoded snippet of your SQL query in the `delta-sharing-query-sql` HTTP header. This allows server administrators to see which queries are being run and optimize data layout accordingly.
@@ -175,6 +177,13 @@ Statically linked builds of libcurl look for certificates where the machine that
 3. Otherwise libcurl's own default, plus the OS trust store where the platform provides one (Windows)
 
 This is the same list, order, and `ca_cert_file` precedence that `httpfs` uses, so the sharing API calls made by this extension and the data files fetched by `httpfs` always trust the same store. If certificates live somewhere non-standard (custom images, corporate roots), `SET ca_cert_file` covers both. TLS failures report which certificate file was in use.
+
+### ⏱️ Timeouts and Paging
+In native builds, every request uses `httpfs`' `http_timeout` the way `httpfs` does: connecting may take that many seconds, and a response that slows to under 1 KB/s for that long fails. A large response that keeps arriving is never cut off. With `httpfs` not loaded, the timeout is 30 seconds. `SET http_timeout = 0` turns the stall check off and leaves connecting to libcurl's default (300 seconds).
+
+Paged responses (listings, and table queries a server splits across pages) end with an error, never a partial result, when:
+- the server returns a next page it already returned, which would never end, or
+- the response takes more than `delta_sharing_max_pages` pages (`SET delta_sharing_max_pages = 0` for no limit).
 
 ---
 

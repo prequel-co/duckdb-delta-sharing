@@ -785,6 +785,10 @@ static void LoadInternal(DUCKDB_DELTA_SHARING_EXTENSION_LOAD_PARAM) {
     config.AddExtensionOption("delta_sharing_query_telemetry_enabled", "Enable sending full SQL query to server for telemetry",
         LogicalType::BOOLEAN,
         Value::BOOLEAN(false));
+    config.AddExtensionOption("delta_sharing_max_pages",
+        "Most pages a Delta Sharing listing or query may take before it fails (0 = no limit)",
+        LogicalType::UBIGINT,
+        Value::UBIGINT(DELTA_SHARING_DEFAULT_MAX_PAGES));
 
     // Delta Sharing Secrets Registration
     SecretType secret_type;

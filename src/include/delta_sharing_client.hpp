@@ -1,6 +1,7 @@
 #pragma once
 
 #include "duckdb.hpp"
+#include "duckdb/common/http_util.hpp"
 #include "delta_sharing_json.hpp"
 #include "delta_sharing_secret_resolution.hpp"
 #include <string>
@@ -8,6 +9,9 @@
 #include <memory>
 
 namespace duckdb {
+
+// Default for the `delta_sharing_max_pages` setting.
+static constexpr uint64_t DELTA_SHARING_DEFAULT_MAX_PAGES = 1000;
 
 // Delta Sharing Profile structure
 struct DeltaSharingProfile {
@@ -17,6 +21,10 @@ struct DeltaSharingProfile {
     std::string expiration_time; // Optional, ISO 8601 format
     bool query_telemetry_enabled;
     std::string current_query;
+    // httpfs' `http_timeout` (seconds); bounds connecting and stalled transfers the same way httpfs does.
+    uint64_t http_timeout = HTTPParams::DEFAULT_TIMEOUT_SECONDS;
+    // `delta_sharing_max_pages`: most pages one listing or query may take (0 = no limit).
+    uint64_t max_pages = DELTA_SHARING_DEFAULT_MAX_PAGES;
     // Mirrors httpfs' `ca_cert_file` setting so one knob covers both the sharing
     // API calls made here and the data files httpfs fetches.
     std::string ca_cert_file;
