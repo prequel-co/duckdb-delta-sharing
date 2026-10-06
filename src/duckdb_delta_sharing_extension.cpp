@@ -290,6 +290,20 @@ static void ReadDeltaShareFunctionWrapper(ClientContext &context, TableFunctionI
     }
 }
 
+// Plan serialization is disabled, as for delta_scan (duckdb/duckdb-delta#257). The inherited
+// parquet callbacks assume parquet's own bind data and file list:
+//   serialize an empty-table scan  → reads past its TableFunctionData (crash)
+//   deserialize a plan copy        → plain file list, so the scan returns no rows
+// It must be NotImplementedException: CTE inlining and plan verification only catch that type.
+static void DeltaShareScanSerialize(Serializer &serializer, const optional_ptr<FunctionData> bind_data,
+                                    const TableFunction &function) {
+    throw NotImplementedException("Delta Sharing scan serialization not implemented");
+}
+
+static unique_ptr<FunctionData> DeltaShareScanDeserialize(Deserializer &deserializer, TableFunction &function) {
+    throw NotImplementedException("Delta Sharing scan deserialization not implemented");
+}
+
 static unique_ptr<MultiFileReader> CreateDeltaShareMultiFileReader(const TableFunction &function) {
     return make_uniq<DeltaShareMultiFileReader>();
 }
@@ -819,7 +833,9 @@ static void LoadInternal(DUCKDB_DELTA_SHARING_EXTENSION_LOAD_PARAM) {
 
     base_read.function = ReadDeltaShareFunctionWrapper;
     base_read.get_multi_file_reader = CreateDeltaShareMultiFileReader;
-    base_read.bind = ReadDeltaShareBind; 
+    base_read.bind = ReadDeltaShareBind;
+    base_read.serialize = DeltaShareScanSerialize;
+    base_read.deserialize = DeltaShareScanDeserialize;
     base_read.get_partition_stats = nullptr;
     base_read.statistics = nullptr;
     base_read.cardinality = nullptr;
