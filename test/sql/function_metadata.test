@@ -1,0 +1,51 @@
+# name: test/sql/function_metadata.test
+# description: verify function metadata in duckdb_functions() for delta_share functions
+# group: [sql]
+
+require parquet
+
+require duckdb_delta_sharing
+
+# 1. Assert exactly 5 delta_share functions are registered
+query I
+SELECT count(DISTINCT function_name)
+FROM duckdb_functions()
+WHERE function_name LIKE 'delta_share_%';
+----
+5
+
+# 2. Assert NO functions have an empty or null description
+query I
+SELECT count(*)
+FROM duckdb_functions()
+WHERE function_name LIKE 'delta_share_%'
+  AND (description IS NULL OR description = '');
+----
+0
+
+# 3. Assert NO functions have empty examples
+query I
+SELECT count(*)
+FROM duckdb_functions()
+WHERE function_name LIKE 'delta_share_%'
+  AND (examples IS NULL OR len(examples) = 0);
+----
+0
+
+# 4. Assert NO placeholder parameter names (col0, col1, etc.) remain
+query I
+SELECT count(*)
+FROM duckdb_functions()
+WHERE function_name LIKE 'delta_share_%'
+  AND list_filter(parameters, x -> x ~~ 'col%') != [];
+----
+0
+
+# 5. Assert all delta_share functions have the 'delta_sharing' category
+query I
+SELECT count(*)
+FROM duckdb_functions()
+WHERE function_name LIKE 'delta_share_%'
+  AND NOT list_contains(categories, 'delta_sharing');
+----
+0
