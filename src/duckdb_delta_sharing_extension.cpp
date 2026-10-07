@@ -7,6 +7,7 @@
 #include "duckdb/function/scalar_function.hpp"
 #include "duckdb/function/table_function.hpp"
 #include "duckdb/parser/parsed_data/create_scalar_function_info.hpp"
+#include "duckdb/parser/parsed_data/create_table_function_info.hpp"
 #include "duckdb/planner/operator/logical_get.hpp"
 #include "duckdb/main/connection.hpp"
 #include "duckdb/main/query_result.hpp"
@@ -731,6 +732,27 @@ static unique_ptr<BaseSecret> CreateDeltaSharingSecretFromEnv(ClientContext &con
     return std::move(result);
 }
 
+static FunctionDescription MakeTableFunctionDescription(
+    const TableFunction &func,
+    vector<LogicalType> parameter_types,
+    vector<string> positional_param_names,
+    string description,
+    vector<string> examples,
+    vector<string> categories = {"delta_sharing"}) {
+
+    FunctionDescription desc;
+    desc.parameter_types = std::move(parameter_types);
+    desc.description = std::move(description);
+    desc.examples = std::move(examples);
+    desc.categories = std::move(categories);
+
+    desc.parameter_names = std::move(positional_param_names);
+    for (const auto &named_param : func.named_parameters) {
+        desc.parameter_names.push_back(named_param.first);
+    }
+    return desc;
+}
+
 static void LoadInternal(DUCKDB_DELTA_SHARING_EXTENSION_LOAD_PARAM) {
     auto &instance = DUCKDB_GET_DATABASE_INSTANCE(db);
     auto &config = DBConfig::GetConfig(instance);
@@ -802,14 +824,32 @@ static void LoadInternal(DUCKDB_DELTA_SHARING_EXTENSION_LOAD_PARAM) {
     SecretManager::Get(instance).RegisterSecretFunction(ds_env_fun, OnCreateConflict::REPLACE_ON_CONFLICT);
 
     // Delta Sharing Functions
+    // 1. delta_share_list
     TableFunction list("delta_share_list", {}, ListFunction, ListBind);
     list.varargs = LogicalType::VARCHAR;
     DeltaSharingSecretRequest::AddNamedParameters(list);
-    DUCKDB_REGISTER_FUNCTION(db, list);
+    CreateTableFunctionInfo list_info(list);
+    list_info.on_conflict = OnCreateConflict::ALTER_ON_CONFLICT;
+    list_info.descriptions.push_back(MakeTableFunctionDescription(
+        list,
+        {},
+        {},
+        "List shares, schemas in a share, tables in a schema, or columns in a table from a Delta Sharing server.",
+        {"SELECT * FROM delta_share_list();"}));
+    DUCKDB_REGISTER_FUNCTION(db, list_info);
 
+    // 2. delta_share_list_all_tables
     TableFunction all_tables("delta_share_list_all_tables", {LogicalType::VARCHAR}, ListFunction, AllTablesBind);
     DeltaSharingSecretRequest::AddNamedParameters(all_tables);
-    DUCKDB_REGISTER_FUNCTION(db, all_tables);
+    CreateTableFunctionInfo all_tables_info(all_tables);
+    all_tables_info.on_conflict = OnCreateConflict::ALTER_ON_CONFLICT;
+    all_tables_info.descriptions.push_back(MakeTableFunctionDescription(
+        all_tables,
+        {LogicalType::VARCHAR},
+        {"share_name"},
+        "List all tables across all schemas in a Delta Sharing share.",
+        {"SELECT * FROM delta_share_list_all_tables('my_share');"}));
+    DUCKDB_REGISTER_FUNCTION(db, all_tables_info);
 
     // Register our read_parquet overlay!
     auto &parquet_scan_entry = DUCKDB_GET_TABLE_FUNCTION(db, con, "read_parquet");
@@ -826,6 +866,7 @@ static void LoadInternal(DUCKDB_DELTA_SHARING_EXTENSION_LOAD_PARAM) {
     base_read.named_parameters.erase("schema");
     DeltaSharingSecretRequest::AddNamedParameters(base_read);
 
+    // 3. delta_share_read
     TableFunctionSet delta_share_read("delta_share_read");
     
     // 3-argument version
@@ -846,9 +887,29 @@ static void LoadInternal(DUCKDB_DELTA_SHARING_EXTENSION_LOAD_PARAM) {
     read_4arg_tstz.arguments = {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::TIMESTAMP_TZ};
     delta_share_read.AddFunction(read_4arg_tstz);
 
-    DUCKDB_REGISTER_FUNCTION(db, delta_share_read);
+    CreateTableFunctionInfo read_info(delta_share_read);
+    read_info.on_conflict = OnCreateConflict::ALTER_ON_CONFLICT;
+    read_info.descriptions.push_back(MakeTableFunctionDescription(
+        read_3arg,
+        {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR},
+        {"share_name", "schema_name", "table_name"},
+        "Read a remote Delta Lake table via Delta Sharing as a DuckDB table.",
+        {"SELECT * FROM delta_share_read('my_share', 'my_schema', 'my_table');"}));
+    read_info.descriptions.push_back(MakeTableFunctionDescription(
+        read_4arg_ts,
+        {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::TIMESTAMP},
+        {"share_name", "schema_name", "table_name", "timestamp"},
+        "Read a remote Delta Lake table via Delta Sharing as of a specific historical timestamp.",
+        {"SELECT * FROM delta_share_read('my_share', 'my_schema', 'my_table', TIMESTAMP '2024-04-09 12:00:00');"}));
+    read_info.descriptions.push_back(MakeTableFunctionDescription(
+        read_4arg_tstz,
+        {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::TIMESTAMP_TZ},
+        {"share_name", "schema_name", "table_name", "timestamp"},
+        "Read a remote Delta Lake table via Delta Sharing as of a specific historical timestamptz.",
+        {"SELECT * FROM delta_share_read('my_share', 'my_schema', 'my_table', TIMESTAMPTZ '2024-04-09 12:00:00Z');"}));
+    DUCKDB_REGISTER_FUNCTION(db, read_info);
 
-    // CDF Function
+    // 4. delta_share_change_data_feed
     TableFunctionSet delta_share_cdf("delta_share_change_data_feed");
     TableFunction base_cdf = base_read;
     base_cdf.bind = ReadDeltaShareCdfBind;
@@ -868,7 +929,29 @@ static void LoadInternal(DUCKDB_DELTA_SHARING_EXTENSION_LOAD_PARAM) {
     cdf_5arg.arguments = {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::ANY, LogicalType::ANY};
     delta_share_cdf.AddFunction(cdf_5arg);
 
-    DUCKDB_REGISTER_FUNCTION(db, delta_share_cdf);
+    CreateTableFunctionInfo cdf_info(delta_share_cdf);
+    cdf_info.on_conflict = OnCreateConflict::ALTER_ON_CONFLICT;
+    cdf_info.descriptions.push_back(MakeTableFunctionDescription(
+        cdf_3arg,
+        {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR},
+        {"share_name", "schema_name", "table_name"},
+        "Query Change Data Feed (CDF) changes for a Delta table starting from version 0.",
+        {"SELECT * FROM delta_share_change_data_feed('my_share', 'my_schema', 'my_table');"}));
+    cdf_info.descriptions.push_back(MakeTableFunctionDescription(
+        cdf_4arg,
+        {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::ANY},
+        {"share_name", "schema_name", "table_name", "starting_version_or_timestamp"},
+        "Query Change Data Feed (CDF) changes for a Delta table starting from a specific version or timestamp.",
+        {"SELECT * FROM delta_share_change_data_feed('my_share', 'my_schema', 'my_table', 10);"}));
+    cdf_info.descriptions.push_back(MakeTableFunctionDescription(
+        cdf_5arg,
+        {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::ANY, LogicalType::ANY},
+        {"share_name", "schema_name", "table_name", "starting_version_or_timestamp", "ending_version_or_timestamp"},
+        "Query Change Data Feed (CDF) changes for a Delta table within a version or timestamp range.",
+        {"SELECT * FROM delta_share_change_data_feed('my_share', 'my_schema', 'my_table', 10, 20);"}));
+    DUCKDB_REGISTER_FUNCTION(db, cdf_info);
+
+    // 5. delta_share_list_files
     ScalarFunctionSet list_files_set("delta_share_list_files");
 
     // 3-argument version (no predicate hints)
@@ -887,7 +970,27 @@ static void LoadInternal(DUCKDB_DELTA_SHARING_EXTENSION_LOAD_PARAM) {
 
     list_files_set.AddFunction(list_files_3arg);
     list_files_set.AddFunction(list_files_4arg);
-    DUCKDB_REGISTER_FUNCTION(db, list_files_set);
+
+    CreateScalarFunctionInfo list_files_info(list_files_set);
+    list_files_info.on_conflict = OnCreateConflict::ALTER_ON_CONFLICT;
+
+    FunctionDescription list_files_3arg_desc;
+    list_files_3arg_desc.parameter_types = {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR};
+    list_files_3arg_desc.parameter_names = {"share_name", "schema_name", "table_name"};
+    list_files_3arg_desc.description = "Return a list of storage file URLs for a Delta table from a Delta Sharing server.";
+    list_files_3arg_desc.examples = {"delta_share_list_files('my_share', 'my_schema', 'my_table')"};
+    list_files_3arg_desc.categories = {"delta_sharing"};
+    list_files_info.descriptions.push_back(std::move(list_files_3arg_desc));
+
+    FunctionDescription list_files_4arg_desc;
+    list_files_4arg_desc.parameter_types = {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR};
+    list_files_4arg_desc.parameter_names = {"share_name", "schema_name", "table_name", "predicate_hints"};
+    list_files_4arg_desc.description = "Return a list of storage file URLs for a Delta table matching SQL predicate hints.";
+    list_files_4arg_desc.examples = {"delta_share_list_files('my_share', 'my_schema', 'my_table', 'date >= ''2024-01-01''')"};
+    list_files_4arg_desc.categories = {"delta_sharing"};
+    list_files_info.descriptions.push_back(std::move(list_files_4arg_desc));
+
+    DUCKDB_REGISTER_FUNCTION(db, list_files_info);
 
 }
 
