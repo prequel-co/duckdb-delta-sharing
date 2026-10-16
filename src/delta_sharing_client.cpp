@@ -15,6 +15,7 @@
 #include <sstream>
 #include <fstream>
 #include <cstdlib>
+#include <unordered_set>
 
 #ifdef __EMSCRIPTEN__
 EM_JS(char*, perform_sync_xhr, (const char* method_cstr, const char* url_cstr, const char* headers_json_cstr, const char* body_cstr), {
@@ -190,6 +191,18 @@ void ApplyCertPath(CURL *curl, const std::string &ca_cert_file) {
 #endif
 }
 
+// Same options as duckdb-httpfs' curl client (src/httpfs_curl_client.cpp):
+//   connect          → fails after `http_timeout` seconds
+//   stalled transfer → fails once it moves under 1 KB/s for `http_timeout` seconds
+//   whole transfer   → no limit, so a large response that keeps arriving completes
+void ApplyTimeouts(CURL *curl, uint64_t timeout) {
+    const long seconds = static_cast<long>(timeout);
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, seconds);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 0L);
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1024L);
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, seconds);
+}
+
 } // namespace
 #endif
 
@@ -209,6 +222,44 @@ static std::string GetNextPageLink(const std::map<std::string, std::string>& hea
     }
     return "";
 }
+
+namespace {
+
+// Ends a paged response that would never finish, with an error rather than a
+// partial result:
+//   repeat → the server returned a next page it already returned, so following
+//            it would loop forever (botocore fails the same way)
+//   cap    → more than `delta_sharing_max_pages` pages (0 = no limit)
+class PageGuard {
+public:
+    PageGuard(std::string error_prefix, std::string next_kind, uint64_t max_pages)
+        : error_prefix_(std::move(error_prefix)), next_kind_(std::move(next_kind)), max_pages_(max_pages) {
+    }
+
+    //! Call with each next page token or link, before requesting that page.
+    void Next(const std::string &next) {
+        if (!seen_.insert(next).second) {
+            throw HTTPException(error_prefix_ + ": the server returned a next page " + next_kind_ +
+                                " it had already returned (after page " + std::to_string(pages_) +
+                                "); stopping, because following it would never end.");
+        }
+        if (max_pages_ > 0 && pages_ >= max_pages_) {
+            throw HTTPException(error_prefix_ + ": the server was still paging after " + std::to_string(max_pages_) +
+                                " pages (delta_sharing_max_pages); stopping rather than returning a partial "
+                                "result. Raise delta_sharing_max_pages, or set it to 0 for no limit.");
+        }
+        pages_++;
+    }
+
+private:
+    std::string error_prefix_;
+    std::string next_kind_;
+    uint64_t max_pages_;
+    uint64_t pages_ = 1;
+    std::unordered_set<std::string> seen_;
+};
+
+} // namespace
 
 // DeltaSharingProfile implementation
 DeltaSharingProfile DeltaSharingProfile::FromConfig(ClientContext &context) {
@@ -263,6 +314,16 @@ DeltaSharingProfile DeltaSharingProfile::FromConfig(ClientContext &context, cons
         profile.ca_cert_file = ca_cert_value.ToString();
     }
 
+    Value http_timeout_value;
+    if (context.TryGetCurrentSetting("http_timeout", http_timeout_value) && !http_timeout_value.IsNull()) {
+        profile.http_timeout = http_timeout_value.GetValue<uint64_t>();
+    }
+
+    Value max_pages_value;
+    if (context.TryGetCurrentSetting("delta_sharing_max_pages", max_pages_value) && !max_pages_value.IsNull()) {
+        profile.max_pages = max_pages_value.GetValue<uint64_t>();
+    }
+
     profile.current_query = "";
     if (profile.query_telemetry_enabled) {
         // Note: active_query is null during the Bind phase in database/sql, which throws an InternalException.
@@ -291,6 +352,7 @@ DeltaSharingClient::DeltaSharingClient(const DeltaSharingProfile &profile)
         throw InternalException("DeltaSharingClient error: Failed to initialize CURL");
     }
     ApplyCertPath((CURL *)curl_, profile_.ca_cert_file);
+    ApplyTimeouts((CURL *)curl_, profile_.http_timeout);
 #else
     curl_ = nullptr;
 #endif
@@ -485,6 +547,10 @@ HttpResponse DeltaSharingClient::PerformRequest(
             response.error_message += " (certificate file: " +
                                       (cert_path.empty() ? "libcurl built-in default" : cert_path) +
                                       "; override it with the ca_cert_file setting)";
+        }
+        if (res == CURLE_OPERATION_TIMEDOUT && profile_.http_timeout > 0) {
+            response.error_message += " (http_timeout: " + std::to_string(profile_.http_timeout) +
+                                      " seconds; raise it with SET http_timeout)";
         }
         response.success = false;
         return response;
@@ -769,6 +835,7 @@ DeltaSharingClient::QueryTableResult DeltaSharingClient::QueryTable(
     bool found_metadata = false;
     std::string next_url = "";
     bool first_page = true;
+    PageGuard guard("QueryTable error", "link", profile_.max_pages);
 
     while (true) {
         HttpResponse response;
@@ -823,8 +890,9 @@ DeltaSharingClient::QueryTableResult DeltaSharingClient::QueryTable(
         // Check for next page
         next_url = GetNextPageLink(response.headers);
         if (next_url.empty()) {
-            break; 
+            break;
         }
+        guard.Next(next_url);
         first_page = false;
     }
 
@@ -866,6 +934,7 @@ DeltaSharingClient::QueryTableResult DeltaSharingClient::QueryTableChanges(
 
     std::string next_url = path;
     bool first_page = true;
+    PageGuard guard("QueryTableChanges error", "link", profile_.max_pages);
 
     while (true) {
         HttpResponse response;
@@ -953,8 +1022,9 @@ DeltaSharingClient::QueryTableResult DeltaSharingClient::QueryTableChanges(
         // Check for next page
         next_url = GetNextPageLink(response.headers);
         if (next_url.empty()) {
-            break; 
+            break;
         }
+        guard.Next(next_url);
         first_page = false;
     }
 
@@ -996,6 +1066,7 @@ std::unordered_map<std::string, std::string> DeltaSharingClient::ParseColumnMapp
 JsonValue DeltaSharingClient::PerformPaginatedGet(const std::string &path, int max_results, const std::string &page_token) {
     json all_items = json::array();
     std::string current_token = page_token;
+    PageGuard guard("Paginated GET error on " + path, "token", profile_.max_pages);
 
     while (true) {
         std::string query_params;
@@ -1012,6 +1083,7 @@ JsonValue DeltaSharingClient::PerformPaginatedGet(const std::string &path, int m
             throw HTTPException("Paginated GET error on " + path + ": request failed. " + response.error_message);
         }
 
+        std::string next_token;
         try {
             auto j = json::parse(response.body);
             if (j.contains("items") && j["items"].is_array()) {
@@ -1020,14 +1092,18 @@ JsonValue DeltaSharingClient::PerformPaginatedGet(const std::string &path, int m
                 }
             }
 
-            if (j.contains("nextPageToken") && j["nextPageToken"].is_string() && !j["nextPageToken"].get<std::string>().empty()) {
-                current_token = j["nextPageToken"].get<std::string>();
-            } else {
-                break;
+            if (j.contains("nextPageToken") && j["nextPageToken"].is_string()) {
+                next_token = j["nextPageToken"].get<std::string>();
             }
         } catch (const std::exception &e) {
             throw SerializationException("Paginated GET error on " + path + ": failed to parse response. " + std::string(e.what()));
         }
+
+        if (next_token.empty()) {
+            break;
+        }
+        guard.Next(next_token);
+        current_token = next_token;
     }
 
     return JsonValue::FromInternal(&all_items);
