@@ -32,6 +32,12 @@ Then, you can run the integration tests:
 ./test/integration/run_e2e_tests.sh
 ```
 
+Some integration tests run against a local [MockServer](https://www.mock-server.com/) container instead of a live server, so they need no credentials. They need Docker, curl, and a `make release` build:
+
+```bash
+./test/integration/run_empty_table_tests.sh
+```
+
 ## Code Formatting
 
 This project uses `clang-format` and `clang-tidy` to enforce C++ style conventions.
