@@ -1,0 +1,44 @@
+[
+  {
+    "httpRequest": {
+      "method": "POST",
+      "path": "/shares/s/schemas/sc/tables/empty/query"
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "body": {
+        "type": "STRING",
+        "string": "{\"protocol\": {\"minReaderVersion\": 1}}\n{\"metaData\": {\"id\": \"empty\", \"format\": {\"provider\": \"parquet\"}, \"schemaString\": \"{\\\"type\\\": \\\"struct\\\", \\\"fields\\\": [{\\\"name\\\": \\\"id\\\", \\\"type\\\": \\\"long\\\", \\\"nullable\\\": true, \\\"metadata\\\": {}}]}\", \"partitionColumns\": []}}",
+        "contentType": "application/x-ndjson"
+      }
+    }
+  },
+  {
+    "httpRequest": {
+      "method": "POST",
+      "path": "/shares/s/schemas/sc/tables/data/query"
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "body": {
+        "type": "STRING",
+        "string": "{\"protocol\": {\"minReaderVersion\": 1}}\n{\"metaData\": {\"id\": \"data\", \"format\": {\"provider\": \"parquet\"}, \"schemaString\": \"{\\\"type\\\": \\\"struct\\\", \\\"fields\\\": [{\\\"name\\\": \\\"id\\\", \\\"type\\\": \\\"long\\\", \\\"nullable\\\": true, \\\"metadata\\\": {}}]}\", \"partitionColumns\": []}}\n{\"file\": {\"url\": \"test/data/share_data_table.parquet\", \"id\": \"f1\", \"partitionValues\": {}, \"size\": 1}}",
+        "contentType": "application/x-ndjson"
+      }
+    }
+  },
+  {
+    "httpRequest": {
+      "method": "GET",
+      "path": "/shares/s/schemas/sc/tables/empty/changes"
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "body": {
+        "type": "STRING",
+        "string": "{\"protocol\": {\"minReaderVersion\": 1}}\n{\"metaData\": {\"id\": \"empty\", \"format\": {\"provider\": \"parquet\"}, \"schemaString\": \"{\\\"type\\\": \\\"struct\\\", \\\"fields\\\": [{\\\"name\\\": \\\"id\\\", \\\"type\\\": \\\"long\\\", \\\"nullable\\\": true, \\\"metadata\\\": {}}]}\", \"partitionColumns\": []}}",
+        "contentType": "application/x-ndjson"
+      }
+    }
+  }
+]

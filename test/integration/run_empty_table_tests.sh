@@ -2,7 +2,7 @@
 set -eo pipefail
 
 echo "========================================================="
-echo "Empty Table Integration Tests (local stub server)"
+echo "Empty Table Integration Tests (MockServer)"
 echo "========================================================="
 
 # Reading a table with no files under a multi-child operator (UNION ALL, JOIN)
@@ -12,8 +12,8 @@ echo "========================================================="
 
 cd "$(dirname "$0")/../.."
 
-DUCKDB_PATH=${DUCKDB_PATH:-"./build/release/duckdb"}
-EXT_PATH=${EXT_PATH:-"./build/release/extension/duckdb_delta_sharing/duckdb_delta_sharing.duckdb_extension"}
+DUCKDB_PATH="./build/release/duckdb"
+EXT_PATH="./build/release/extension/duckdb_delta_sharing/duckdb_delta_sharing.duckdb_extension"
 RUNS=${RUNS:-20}
 
 if [ ! -f "$DUCKDB_PATH" ]; then
@@ -26,25 +26,12 @@ if [ ! -f "$EXT_PATH" ]; then
     exit 1
 fi
 
-WORK_DIR=$(mktemp -d)
-trap 'rm -rf "$WORK_DIR"' EXIT
-PARQUET="${WORK_DIR}/data.parquet"
-"$DUCKDB_PATH" -c "COPY (SELECT range AS id FROM range(3)) TO '${PARQUET}'"
-
-python3 test/integration/stub_sharing_server.py "$PARQUET" > "${WORK_DIR}/port" &
-SERVER_PID=$!
-disown "$SERVER_PID"
-trap 'kill $SERVER_PID 2>/dev/null; rm -rf "$WORK_DIR"' EXIT
-
-for _ in $(seq 50); do
-    [ -s "${WORK_DIR}/port" ] && break
-    sleep 0.1
-done
-PORT=$(head -n 1 "${WORK_DIR}/port")
-if [ -z "$PORT" ]; then
-    echo "ERROR: stub server did not start"
-    exit 1
-fi
+# MockServer serves canned Delta Sharing responses: table "empty" has no files,
+# table "data" has one, read from test/data by path relative to the repo root.
+source test/integration/mockserver.sh
+trap mockserver_stop EXIT
+mockserver_start test/integration/empty_table_expectations.json
+PORT=$MOCKSERVER_PORT
 
 SETUP="
 LOAD '${EXT_PATH}';
