@@ -292,11 +292,14 @@ static void ReadDeltaShareFunctionWrapper(ClientContext &context, TableFunctionI
 //   serialize an empty-table scan  → reads past its TableFunctionData (crash)
 //   deserialize a plan copy        → plain file list, so the scan returns no rows
 // It must be NotImplementedException: CTE inlining and plan verification only catch that type.
+// TODO: implement serialization so these scans can take part in optimized plans
+// (common subplan elimination, CTE inlining, window self-join).
 static void DeltaShareScanSerialize(Serializer &serializer, const optional_ptr<FunctionData> bind_data,
                                     const TableFunction &function) {
     throw NotImplementedException("Delta Sharing scan serialization not implemented");
 }
 
+// TODO: implement deserialization together with DeltaShareScanSerialize.
 static unique_ptr<FunctionData> DeltaShareScanDeserialize(Deserializer &deserializer, TableFunction &function) {
     throw NotImplementedException("Delta Sharing scan deserialization not implemented");
 }
