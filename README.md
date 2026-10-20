@@ -49,6 +49,35 @@ Alternatively, if you have `DELTA_SHARING_ENDPOINT` and `DELTA_SHARING_BEARER_TO
 CREATE SECRET (TYPE delta_sharing, PROVIDER env);
 ```
 
+### 3. Choosing a secret
+
+A session can hold several `delta_sharing` secrets. The table functions
+(`delta_share_list`, `delta_share_list_all_tables`, `delta_share_read`,
+`delta_share_change_data_feed`) take two optional named parameters that choose one:
+
+| Call | Secret used | Requests go to |
+|---|---|---|
+| no parameter | the unscoped secret (ranked the DuckDB way: temporary before persistent, then by name); otherwise the only secret; otherwise an error | the secret's `ENDPOINT` |
+| `endpoint := 'https://…'` | the secret whose `SCOPE` is the longest prefix of the endpoint (unscoped secrets match everything, at the lowest rank) | the given endpoint |
+| `secret := 'name'` | that secret | the secret's `ENDPOINT` |
+| both | the named secret | the given endpoint |
+
+When `endpoint` is given, it must equal the chosen secret's `ENDPOINT` or extend
+it with more path segments (no `.` or `..` segments). Otherwise the call fails,
+so a secret's bearer token is only ever sent under its own `ENDPOINT`.
+
+```sql
+CREATE SECRET sales (TYPE delta_sharing, ENDPOINT 'https://sharing.example.com/sales',
+    BEARER_TOKEN '…', SCOPE 'https://sharing.example.com/sales');
+CREATE SECRET ops (TYPE delta_sharing, ENDPOINT 'https://sharing.example.com/ops',
+    BEARER_TOKEN '…', SCOPE 'https://sharing.example.com/ops');
+
+SELECT * FROM delta_share_list(endpoint := 'https://sharing.example.com/ops');
+SELECT * FROM delta_share_read('share', 'schema', 'table', secret := 'sales');
+```
+
+`delta_share_list_files` is a scalar function and always uses the no-parameter rule.
+
 ---
 
 ## 📂 Functional Reference
