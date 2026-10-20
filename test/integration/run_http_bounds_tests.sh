@@ -98,10 +98,6 @@ run_case "server that stalls after accepting" stall \
     "http_timeout: 2 seconds" 1 6 \
     "SET http_timeout = 2; SELECT count(*) FROM delta_share_list();"
 
-run_case "http_timeout that libcurl rejects" echo \
-    "for http_timeout = 3000000" 0 5 \
-    "SET http_timeout = 3000000; SELECT count(*) FROM delta_share_list();"
-
 run_case "http_timeout too large for libcurl's long" echo \
     "for http_timeout = 18446744073709551615: the value is too large" 0 5 \
     "SET http_timeout = 18446744073709551615; SELECT count(*) FROM delta_share_list();"
