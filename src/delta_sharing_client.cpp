@@ -16,6 +16,7 @@
 #include <fstream>
 #include <cstdlib>
 #include <unordered_set>
+#include <limits>
 
 #ifdef __EMSCRIPTEN__
 EM_JS(char*, perform_sync_xhr, (const char* method_cstr, const char* url_cstr, const char* headers_json_cstr, const char* body_cstr), {
@@ -191,16 +192,34 @@ void ApplyCertPath(CURL *curl, const std::string &ca_cert_file) {
 #endif
 }
 
+// An option libcurl rejects fails the request instead of being dropped, as in
+// duckdb-httpfs' `CURLHandle::SetOption`.
+void SetCurlOption(CURL *curl, CURLoption option, long value, const std::string &what) {
+    auto result = curl_easy_setopt(curl, option, value);
+    if (result != CURLE_OK) {
+        throw IOException("Failed to set curl option " + std::to_string(static_cast<int>(option)) + " for " + what +
+                          ": " + curl_easy_strerror(result));
+    }
+}
+
 // Same options as duckdb-httpfs' curl client (src/httpfs_curl_client.cpp):
 //   connect          → fails after `http_timeout` seconds
 //   stalled transfer → fails once it moves under 1 KB/s for `http_timeout` seconds
 //   whole transfer   → no limit, so a large response that keeps arriving completes
+//   signals          → off, since timeouts would otherwise use SIGALRM, which is
+//                      unsafe with requests on several threads (duckdb-httpfs#443)
 void ApplyTimeouts(CURL *curl, uint64_t timeout) {
+    const auto what = "http_timeout = " + std::to_string(timeout);
+    // libcurl takes a `long`, which is 32-bit on Windows; a larger value would wrap.
+    if (timeout > static_cast<uint64_t>(std::numeric_limits<long>::max())) {
+        throw IOException("Failed to set curl timeouts for " + what + ": the value is too large");
+    }
     const long seconds = static_cast<long>(timeout);
-    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, seconds);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 0L);
-    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1024L);
-    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, seconds);
+    SetCurlOption(curl, CURLOPT_NOSIGNAL, 1L, "signal handling");
+    SetCurlOption(curl, CURLOPT_CONNECTTIMEOUT, seconds, what);
+    SetCurlOption(curl, CURLOPT_TIMEOUT, 0L, what);
+    SetCurlOption(curl, CURLOPT_LOW_SPEED_LIMIT, 1024L, what);
+    SetCurlOption(curl, CURLOPT_LOW_SPEED_TIME, seconds, what);
 }
 
 } // namespace
@@ -352,7 +371,13 @@ DeltaSharingClient::DeltaSharingClient(const DeltaSharingProfile &profile)
         throw InternalException("DeltaSharingClient error: Failed to initialize CURL");
     }
     ApplyCertPath((CURL *)curl_, profile_.ca_cert_file);
-    ApplyTimeouts((CURL *)curl_, profile_.http_timeout);
+    try {
+        ApplyTimeouts((CURL *)curl_, profile_.http_timeout);
+    } catch (...) {
+        // The destructor does not run when the constructor throws.
+        curl_easy_cleanup((CURL *)curl_);
+        throw;
+    }
 #else
     curl_ = nullptr;
 #endif

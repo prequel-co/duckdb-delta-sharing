@@ -2,7 +2,7 @@
 set -eo pipefail
 
 echo "========================================================="
-echo "HTTP Limit Integration Tests (local misbehaving server)"
+echo "HTTP Limit Integration Tests (MockServer)"
 echo "========================================================="
 
 # A server that keeps paging, or never answers, must end the query with an
@@ -11,8 +11,8 @@ echo "========================================================="
 
 cd "$(dirname "$0")/../.."
 
-DUCKDB_PATH=${DUCKDB_PATH:-"./build/release/duckdb"}
-EXT_PATH=${EXT_PATH:-"./build/release/extension/duckdb_delta_sharing/duckdb_delta_sharing.duckdb_extension"}
+DUCKDB_PATH="./build/release/duckdb"
+EXT_PATH="./build/release/extension/duckdb_delta_sharing/duckdb_delta_sharing.duckdb_extension"
 WATCHDOG=${WATCHDOG:-30}
 
 if [ ! -f "$DUCKDB_PATH" ]; then
@@ -25,26 +25,17 @@ if [ ! -f "$EXT_PATH" ]; then
     exit 1
 fi
 
-WORK_DIR=$(mktemp -d)
-trap 'rm -rf "$WORK_DIR"' EXIT
+# MockServer misbehaves according to the first path segment of the endpoint
+# (echo, cycle, endless, pages3, link, stall); see the expectations file.
+source test/integration/mockserver.sh
+trap mockserver_stop EXIT
+mockserver_start test/integration/http_bounds_expectations.json
+PORT=$MOCKSERVER_PORT
 
-python3 test/integration/misbehaving_sharing_server.py > "${WORK_DIR}/port" &
-SERVER_PID=$!
-disown "$SERVER_PID"
-trap 'kill $SERVER_PID 2>/dev/null; rm -rf "$WORK_DIR"' EXIT
-
-for _ in $(seq 50); do
-    [ -s "${WORK_DIR}/port" ] && break
-    sleep 0.1
-done
-PORT=$(head -n 1 "${WORK_DIR}/port")
-if [ -z "$PORT" ]; then
-    echo "ERROR: misbehaving server did not start"
-    exit 1
-fi
-
+# Requests MockServer has received so far
 answered() {
-    curl -s --retry 5 --retry-connrefused "http://127.0.0.1:${PORT}/requests"
+    curl -sf -X PUT "http://127.0.0.1:${PORT}/mockserver/retrieve?type=REQUESTS&format=JSON" -d '{"path": "/.*"}' |
+        { grep -o '"method"' || true; } | wc -l | tr -d ' '
 }
 
 FAILED=0
@@ -107,8 +98,13 @@ run_case "server that stalls after accepting" stall \
     "http_timeout: 2 seconds" 1 6 \
     "SET http_timeout = 2; SELECT count(*) FROM delta_share_list();"
 
-run_case "slow response that keeps arriving" trickle "shares=1" 1 8 \
-    "SET http_timeout = 2; SELECT 'shares=' || count(*) FROM delta_share_list();"
+run_case "http_timeout that libcurl rejects" echo \
+    "for http_timeout = 3000000" 0 5 \
+    "SET http_timeout = 3000000; SELECT count(*) FROM delta_share_list();"
+
+run_case "http_timeout too large for libcurl's long" echo \
+    "for http_timeout = 18446744073709551615: the value is too large" 0 5 \
+    "SET http_timeout = 18446744073709551615; SELECT count(*) FROM delta_share_list();"
 
 if [ "$FAILED" -ne 0 ]; then
     echo "HTTP limit integration tests FAILED"

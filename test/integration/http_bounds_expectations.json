@@ -1,0 +1,90 @@
+[
+  {
+    "httpRequest": {
+      "method": "GET",
+      "path": "/echo/.*"
+    },
+    "httpResponseTemplate": {
+      "templateType": "VELOCITY",
+      "template": "#set($t = \"$!request.queryStringParameters['pageToken'][0]\")#if($t == '')#set($n = 't0')#else#set($n = $t)#end{\"statusCode\": 200, \"body\": {\"items\": [{\"name\": \"t\", \"schema\": \"sc\", \"share\": \"s\", \"id\": \"1\"}], \"nextPageToken\": \"$n\"}}"
+    }
+  },
+  {
+    "httpRequest": {
+      "method": "GET",
+      "path": "/cycle/.*"
+    },
+    "httpResponseTemplate": {
+      "templateType": "VELOCITY",
+      "template": "#set($t = \"$!request.queryStringParameters['pageToken'][0]\")#if($t == 'a')#set($n = 'b')#else#set($n = 'a')#end{\"statusCode\": 200, \"body\": {\"items\": [{\"name\": \"t\", \"schema\": \"sc\", \"share\": \"s\", \"id\": \"1\"}], \"nextPageToken\": \"$n\"}}"
+    }
+  },
+  {
+    "httpRequest": {
+      "method": "GET",
+      "path": "/endless/.*"
+    },
+    "httpResponseTemplate": {
+      "templateType": "VELOCITY",
+      "template": "#set($t = \"$!request.queryStringParameters['pageToken'][0]\")#set($n = \"${t}x\"){\"statusCode\": 200, \"body\": {\"items\": [{\"name\": \"t\", \"schema\": \"sc\", \"share\": \"s\", \"id\": \"1\"}], \"nextPageToken\": \"$n\"}}"
+    }
+  },
+  {
+    "httpRequest": {
+      "method": "GET",
+      "path": "/pages3/.*"
+    },
+    "httpResponseTemplate": {
+      "templateType": "VELOCITY",
+      "template": "#set($t = \"$!request.queryStringParameters['pageToken'][0]\")#if($t == '')#set($n = 'p2')#elseif($t == 'p2')#set($n = 'p3')#else#set($n = '')#end{\"statusCode\": 200, \"body\": {\"items\": [{\"name\": \"t\", \"schema\": \"sc\", \"share\": \"s\", \"id\": \"1\"}], \"nextPageToken\": \"$n\"}}"
+    }
+  },
+  {
+    "httpRequest": {
+      "path": "/link/shares/s/schemas/sc/tables/t/query"
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Link": [
+          "</shares/s/schemas/sc/tables/t/query>; rel=\"next\""
+        ]
+      },
+      "body": {
+        "type": "STRING",
+        "string": "{\"protocol\": {\"minReaderVersion\": 1}}\n{\"metaData\": {\"id\": \"t\", \"format\": {\"provider\": \"parquet\"}, \"schemaString\": \"{\\\"type\\\": \\\"struct\\\", \\\"fields\\\": [{\\\"name\\\": \\\"id\\\", \\\"type\\\": \\\"long\\\", \\\"nullable\\\": true, \\\"metadata\\\": {}}]}\", \"partitionColumns\": []}}",
+        "contentType": "application/x-ndjson"
+      }
+    }
+  },
+  {
+    "httpRequest": {
+      "path": "/link/shares/s/schemas/sc/tables/t/changes"
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Link": [
+          "</shares/s/schemas/sc/tables/t/changes>; rel=\"next\""
+        ]
+      },
+      "body": {
+        "type": "STRING",
+        "string": "{\"protocol\": {\"minReaderVersion\": 1}}\n{\"metaData\": {\"id\": \"t\", \"format\": {\"provider\": \"parquet\"}, \"schemaString\": \"{\\\"type\\\": \\\"struct\\\", \\\"fields\\\": [{\\\"name\\\": \\\"id\\\", \\\"type\\\": \\\"long\\\", \\\"nullable\\\": true, \\\"metadata\\\": {}}]}\", \"partitionColumns\": []}}",
+        "contentType": "application/x-ndjson"
+      }
+    }
+  },
+  {
+    "httpRequest": {
+      "path": "/stall/.*"
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "delay": {
+        "timeUnit": "SECONDS",
+        "value": 600
+      }
+    }
+  }
+]
