@@ -16,3 +16,10 @@ statement error
 SELECT * FROM delta_share_list('s', 'sc', 't', 'extra');
 ----
 accepts 0, 1, 2, 3 arguments
+
+# Paging stops after this many pages (0 = no limit); the paging itself is
+# covered by test/integration/run_http_bounds_tests.sh.
+query I
+SELECT current_setting('delta_sharing_max_pages');
+----
+1000
