@@ -10,7 +10,7 @@ You need the DuckDB WASM library installed in your project. If you are using `np
 npm install @duckdb/duckdb-wasm
 ```
 
-*Note: Since the Delta Sharing extension is built for the very latest DuckDB versions, you will likely need to use the `1.33.1-dev57.0` (or newer) release of `@duckdb/duckdb-wasm` to match DuckDB v1.5.5+.*
+*Note: Since the Delta Sharing extension is built for the very latest DuckDB versions, you will likely need to use the `1.33.1-dev57.0` (or newer) release of `@duckdb/duckdb-wasm` to match DuckDB v1.5.6+.*
 
 ## 1. Initialization and Setup
 
