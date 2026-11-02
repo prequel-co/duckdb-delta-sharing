@@ -63,10 +63,6 @@ jobs:
             sudo apt-get update && sudo apt-get install -y ninja-build libssl-dev libcurl4-openssl-dev
           fi
 
-      - name: Setup vcpkg
-        run: |
-          git -C ./extension-ci-tools pull origin main
-
       - name: Build Bundled Binary (Unix)
         if: matrix.os != 'windows-latest'
         run: |
@@ -79,7 +75,7 @@ jobs:
           OSX_BUILD_ARCH=${{ (matrix.arch == 'osx_amd64' && 'x86_64') || (matrix.arch == 'osx_arm64' && 'arm64') || '' }} \
           VCPKG_TARGET_TRIPLET=${{ (matrix.arch == 'osx_amd64' && 'x64-osx') || (matrix.arch == 'osx_arm64' && 'arm64-osx') || (matrix.arch == 'linux_amd64' && 'x64-linux') || (matrix.arch == 'linux_arm64' && 'arm64-linux') || '' }} \
           make ${{ matrix.target }}
-          cmake --build build/${{ matrix.target }} --target duckdb
+          cmake --build build/${{ matrix.target }} --target duckdb --target shell
         env:
           GEN: ninja
 
@@ -100,7 +96,7 @@ jobs:
             -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" \
             -DDUCKDB_EXTENSION_CONFIGS="${WORKSPACE_PATH}/extension_config.cmake" \
             -S duckdb -B build/release
-          cmake --build build/release --target duckdb
+          cmake --build build/release --target duckdb --target shell
 
       - name: Build ODBC Driver (OSX)
         if: startsWith(matrix.os, 'macos')
@@ -119,7 +115,7 @@ jobs:
           fi
           git clone https://github.com/duckdb/duckdb-odbc.git build/duckdb-odbc
           cd build/duckdb-odbc
-          git checkout c816687b
+          git checkout e91b3f73f
           patch -p1 < ../../mac_odbc_fixes.patch
           cat << 'EOF' > patch_static.py
           import os
@@ -142,9 +138,8 @@ jobs:
 
           f2='src/duckdb/generated_extension_loader_package_build.cpp'
           c2=open(f2).read()
-          c2=c2.replace('#include "duckdb/main/extension/generated_extension_loader.hpp"', f'#include "{inc_dir}/duckdb_delta_sharing_extension.hpp"\n#include "duckdb/main/extension/generated_extension_loader.hpp"')
-          c2=c2.replace('return ExtensionLoadResult::NOT_LOADED;', '    if (extension=="duckdb_delta_sharing") {\n        db.LoadStaticExtension<DuckdbDeltaSharingExtension>();\n        return ExtensionLoadResult::LOADED_EXTENSION;\n    }\n    return ExtensionLoadResult::NOT_LOADED;')
-          c2=c2.replace('};', '        "duckdb_delta_sharing",\n    };')
+          c2=c2.replace('#include "duckdb_static_extension.h"', f'#include "duckdb_static_extension.h"\n#include "duckdb/main/database.hpp"\n#include "{inc_dir}/duckdb_delta_sharing_extension.hpp"', 1)
+          c2=c2.replace('\treturn result;', '\tif (duckdb_register_static_extension(&duckdb::StaticExtensionDescriber<duckdb::DuckdbDeltaSharingExtension>::Describe) != 0) {\n\t\tresult = 1;\n\t}\n\treturn result;')
           open(f2,'w').write(c2)
           EOF
           rm -rf src/duckdb
@@ -165,7 +160,7 @@ jobs:
         run: |
           git clone https://github.com/duckdb/duckdb-odbc.git build/duckdb-odbc
           cd build/duckdb-odbc
-          git checkout c816687b
+          git checkout e91b3f73f
           patch -p1 < ../../mac_odbc_fixes.patch
           
           rm -rf src/duckdb
@@ -195,9 +190,8 @@ jobs:
 
           f2='src/duckdb/generated_extension_loader_package_build.cpp'
           c2=open(f2).read()
-          c2=c2.replace('#include "duckdb/main/extension/generated_extension_loader.hpp"', f'#include "{inc_dir}/duckdb_delta_sharing_extension.hpp"\n#include "duckdb/main/extension/generated_extension_loader.hpp"')
-          c2=c2.replace('return ExtensionLoadResult::NOT_LOADED;', '    if (extension=="duckdb_delta_sharing") {\n        db.LoadStaticExtension<DuckdbDeltaSharingExtension>();\n        return ExtensionLoadResult::LOADED_EXTENSION;\n    }\n    return ExtensionLoadResult::NOT_LOADED;')
-          c2=c2.replace('};', '        "duckdb_delta_sharing",\n    };')
+          c2=c2.replace('#include "duckdb_static_extension.h"', f'#include "duckdb_static_extension.h"\n#include "duckdb/main/database.hpp"\n#include "{inc_dir}/duckdb_delta_sharing_extension.hpp"', 1)
+          c2=c2.replace('\treturn result;', '\tif (duckdb_register_static_extension(&duckdb::StaticExtensionDescriber<duckdb::DuckdbDeltaSharingExtension>::Describe) != 0) {\n\t\tresult = 1;\n\t}\n\treturn result;')
           open(f2,'w').write(c2)
           EOF
           python patch_static.py
