@@ -25,20 +25,21 @@ namespace duckdb {
 
 // ParsedExpression to JSON helpers for string predicate parsing
 
-json ParsedOperandJSON(ParsedExpression &expr) {
+json ParsedOperandJSON(const ParsedExpression &expr) {
     json res{};
 
-    if (expr.expression_class == ExpressionClass::COLUMN_REF) {
+    if (expr.GetExpressionClass() == ExpressionClass::COLUMN_REF) {
         auto &column = expr.Cast<ColumnRefExpression>();
         res["op"] = "column";
-        res["name"] = column.GetColumnName();
+        res["name"] = column.GetColumnName().GetIdentifierName();
         res["valueType"] = "string";  // Default type, will be inferred from context
-    } else if (expr.expression_class == ExpressionClass::CONSTANT) {
+    } else if (expr.GetExpressionClass() == ExpressionClass::CONSTANT) {
         auto &literal = expr.Cast<ConstantExpression>();
+        auto val = literal.GetLiteral().ToValue();
         res["op"] = "literal";
-        res["value"] = literal.value.ToString();
+        res["value"] = val.ToString();
         // Infer valueType from Value type
-        switch (literal.value.type().id()) {
+        switch (val.type().id()) {
             case LogicalTypeId::BOOLEAN:
             case LogicalTypeId::TINYINT:
             case LogicalTypeId::SMALLINT:
@@ -57,21 +58,21 @@ json ParsedOperandJSON(ParsedExpression &expr) {
     return res;
 }
 
-json ParsedBinaryOpJSON(ParsedExpression &expr, std::string op) {
+json ParsedBinaryOpJSON(const ParsedExpression &expr, std::string op) {
     json res{};
     res["op"] = op;
     res["children"] = json::array();
     auto &comp_expr = expr.Cast<ComparisonExpression>();
-    if (comp_expr.left) res["children"].push_back(ParsedOperandJSON(*comp_expr.left));
-    if (comp_expr.right) res["children"].push_back(ParsedOperandJSON(*comp_expr.right));
+    res["children"].push_back(ParsedOperandJSON(comp_expr.Left()));
+    res["children"].push_back(ParsedOperandJSON(comp_expr.Right()));
     return res;
 }
 
-json ParseParsedExpressionHint(ParsedExpression &expr) {
+json ParseParsedExpressionHint(const ParsedExpression &expr) {
     json res{};
     std::string op;
 
-    switch (expr.type) {
+    switch (expr.GetExpressionType()) {
         case ExpressionType::COMPARE_EQUAL: {
             op = "equal";
             res = ParsedBinaryOpJSON(expr, op);
@@ -103,8 +104,8 @@ json ParseParsedExpressionHint(ParsedExpression &expr) {
             res["op"] = "isNull";
             auto &op_expr = expr.Cast<OperatorExpression>();
             res["children"] = json::array();
-            if (!op_expr.children.empty()) {
-                res["children"].push_back(ParsedOperandJSON(*op_expr.children[0]));
+            if (!op_expr.GetChildren().empty()) {
+                res["children"].push_back(ParsedOperandJSON(*op_expr.GetChildren()[0]));
             }
         } break;
         case ExpressionType::OPERATOR_IS_NOT_NULL: {
@@ -114,8 +115,8 @@ json ParseParsedExpressionHint(ParsedExpression &expr) {
             json is_null_child{};
             is_null_child["op"] = "isNull";
             is_null_child["children"] = json::array();
-            if (!op_expr.children.empty()) {
-                is_null_child["children"].push_back(ParsedOperandJSON(*op_expr.children[0]));
+            if (!op_expr.GetChildren().empty()) {
+                is_null_child["children"].push_back(ParsedOperandJSON(*op_expr.GetChildren()[0]));
             }
             res["children"].push_back(is_null_child);
         } break;
@@ -123,7 +124,7 @@ json ParseParsedExpressionHint(ParsedExpression &expr) {
             auto &expr_node = expr.Cast<ConjunctionExpression>();
             res["op"] = "and";
             res["children"] = json::array();
-            for (auto &child : expr_node.children) {
+            for (auto &child : expr_node.GetChildren()) {
                 res["children"].push_back(ParseParsedExpressionHint(*child));
             }
         } break;
@@ -131,7 +132,7 @@ json ParseParsedExpressionHint(ParsedExpression &expr) {
             auto &expr_node = expr.Cast<ConjunctionExpression>();
             res["op"] = "or";
             res["children"] = json::array();
-            for (auto &child : expr_node.children) {
+            for (auto &child : expr_node.GetChildren()) {
                 res["children"].push_back(ParseParsedExpressionHint(*child));
             }
         } break;
@@ -143,14 +144,14 @@ json ParseParsedExpressionHint(ParsedExpression &expr) {
             json lower_cmp{};
             lower_cmp["op"] = "greaterThanOrEqual";
             lower_cmp["children"] = json::array();
-            lower_cmp["children"].push_back(ParsedOperandJSON(*between.input));
-            lower_cmp["children"].push_back(ParsedOperandJSON(*between.lower));
+            lower_cmp["children"].push_back(ParsedOperandJSON(between.Input()));
+            lower_cmp["children"].push_back(ParsedOperandJSON(between.LowerBound()));
 
             json upper_cmp{};
             upper_cmp["op"] = "lessThanOrEqual";
             upper_cmp["children"] = json::array();
-            upper_cmp["children"].push_back(ParsedOperandJSON(*between.input));
-            upper_cmp["children"].push_back(ParsedOperandJSON(*between.upper));
+            upper_cmp["children"].push_back(ParsedOperandJSON(between.Input()));
+            upper_cmp["children"].push_back(ParsedOperandJSON(between.UpperBound()));
 
             res["children"].push_back(lower_cmp);
             res["children"].push_back(upper_cmp);
@@ -168,7 +169,8 @@ json ParsePredicateStringToJson(const std::string &predicate_string) {
 
     try {
         // Use DuckDB's parser to parse the predicate string
-        auto expression_list = Parser::ParseExpressionList(predicate_string);
+        auto parser = Parser::GetBuiltinParser();
+        auto expression_list = parser.ParseExpressionList(predicate_string);
 
         if (expression_list.empty()) {
             return json{};

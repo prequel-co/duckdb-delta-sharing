@@ -22,7 +22,7 @@ static string RequireNonEmpty(const Value &value, const string &parameter) {
     return value.ToString();
 }
 
-DeltaSharingSecretRequest DeltaSharingSecretRequest::FromNamedParameters(const named_parameter_map_t &named_parameters) {
+DeltaSharingSecretRequest DeltaSharingSecretRequest::FromNamedParameters(const named_argument_map_t &named_parameters) {
     DeltaSharingSecretRequest request;
     auto endpoint = named_parameters.find(ENDPOINT_PARAMETER);
     if (endpoint != named_parameters.end()) {
@@ -35,16 +35,30 @@ DeltaSharingSecretRequest DeltaSharingSecretRequest::FromNamedParameters(const n
     return request;
 }
 
-named_parameter_map_t DeltaSharingSecretRequest::WithoutRequestParameters(const named_parameter_map_t &named_parameters) {
+named_argument_map_t DeltaSharingSecretRequest::WithoutRequestParameters(const named_argument_map_t &named_parameters) {
     auto result = named_parameters;
-    result.erase(ENDPOINT_PARAMETER);
-    result.erase(SECRET_PARAMETER);
+    auto endpoint_it = result.find(ENDPOINT_PARAMETER);
+    if (endpoint_it != result.end()) {
+        result.erase(endpoint_it);
+    }
+    auto secret_it = result.find(SECRET_PARAMETER);
+    if (secret_it != result.end()) {
+        result.erase(secret_it);
+    }
     return result;
 }
 
 void DeltaSharingSecretRequest::AddNamedParameters(TableFunction &function) {
-    function.named_parameters[ENDPOINT_PARAMETER] = LogicalType::VARCHAR;
-    function.named_parameters[SECRET_PARAMETER] = LogicalType::VARCHAR;
+    auto add_options = [](TypedKwargs &options) {
+        options.Add(ENDPOINT_PARAMETER, LogicalType::VARCHAR)
+            .Add(SECRET_PARAMETER, LogicalType::VARCHAR);
+    };
+    auto &signature = function.GetSignature();
+    if (signature.GetTypedKwargs()) {
+        signature.ExtendTypedKwargs(add_options);
+    } else {
+        signature.WithTypedKwargs("options", add_options);
+    }
 }
 
 static string WithoutTrailingSlashes(const string &url) {
@@ -120,13 +134,13 @@ const KeyValueSecret &ResolvedDeltaSharingSecret::Secret() const {
     auto key_value = dynamic_cast<const KeyValueSecret *>(entry->secret.get());
     if (!key_value) {
         throw InvalidConfigurationException("delta_sharing: secret '%s' is not a key-value secret",
-                                            entry->secret->GetName());
+                                            entry->secret->GetName().GetIdentifierName());
     }
     return *key_value;
 }
 
 static bool IsDeltaSharing(const SecretEntry &entry) {
-    return entry.secret && StringUtil::CIEquals(entry.secret->GetType(), DELTA_SHARING_SECRET_TYPE);
+    return entry.secret && entry.secret->GetType() == DELTA_SHARING_SECRET_TYPE;
 }
 
 // The default rule, used when a call names neither an endpoint nor a secret.
@@ -154,7 +168,7 @@ static unique_ptr<SecretEntry> ResolveDefault(SecretManager &manager, CatalogTra
     }
     vector<string> names;
     for (auto &candidate : candidates) {
-        names.push_back(candidate.secret->GetName());
+        names.push_back(candidate.secret->GetName().GetIdentifierName());
     }
     std::sort(names.begin(), names.end());
     throw InvalidConfigurationException(
@@ -171,7 +185,7 @@ static unique_ptr<SecretEntry> ResolveByName(SecretManager &manager, CatalogTran
     }
     if (!IsDeltaSharing(*entry)) {
         throw InvalidConfigurationException("delta_sharing: secret := '%s' is a %s secret, not delta_sharing", name,
-                                            entry->secret->GetType());
+                                            entry->secret->GetType().GetIdentifierName());
     }
     return entry;
 }
@@ -210,7 +224,7 @@ ResolvedDeltaSharingSecret ResolveDeltaSharingSecret(ClientContext &context, con
     auto secret_endpoint = SecretEndpoint(resolved.Secret());
     if (secret_endpoint.empty()) {
         throw InvalidConfigurationException("delta_sharing: secret '%s' has no ENDPOINT",
-                                            resolved.Secret().GetName());
+                                            resolved.Secret().GetName().GetIdentifierName());
     }
     if (request.endpoint.empty()) {
         resolved.endpoint = secret_endpoint;
@@ -222,7 +236,7 @@ ResolvedDeltaSharingSecret ResolveDeltaSharingSecret(ClientContext &context, con
         throw InvalidConfigurationException(
             "delta_sharing: secret '%s' has ENDPOINT '%s', which does not cover endpoint := '%s'; give each secret "
             "a SCOPE, or pass secret := to choose one",
-            resolved.Secret().GetName(), secret_endpoint, request.endpoint);
+            resolved.Secret().GetName().GetIdentifierName(), secret_endpoint, request.endpoint);
     }
     resolved.endpoint = request.endpoint;
     return resolved;
