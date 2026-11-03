@@ -37,7 +37,7 @@ query I
 SELECT count(*)
 FROM duckdb_functions()
 WHERE function_name LIKE 'delta_share_%'
-  AND list_filter(parameters, x -> x ~~ 'col%') != [];
+  AND list_filter(parameters, lambda x: regexp_matches(x, '^col[0-9]+$')) != [];
 ----
 0
 

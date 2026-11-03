@@ -10,8 +10,6 @@
 #include "duckdb/parser/parsed_data/create_table_function_info.hpp"
 #include "duckdb/planner/operator/logical_get.hpp"
 #include "duckdb/main/connection.hpp"
-#include "duckdb/main/query_result.hpp"
-#include "duckdb/main/materialized_query_result.hpp"
 #ifndef DUCKDB_CPP_EXTENSION_ENTRY
 #include "duckdb/main/extension_util.hpp"
 #endif
@@ -68,7 +66,7 @@ static unique_ptr<FunctionData> ListBind(
     ClientContext &context,
     TableFunctionBindInput &input,
     vector<LogicalType> &return_types,
-    vector<string> &names) {
+    vector<Identifier> &names) {
 
     auto result = make_uniq<ListBindData>();
 
@@ -155,7 +153,7 @@ static unique_ptr<FunctionData> AllTablesBind(
     ClientContext &context,
     TableFunctionBindInput &input,
     vector<LogicalType> &return_types,
-    vector<string> &names) {
+    vector<Identifier> &names) {
 
     auto result = make_uniq<ListBindData>();
 
@@ -194,14 +192,14 @@ static void ListFunction(
     if (bind_data.list_type == 3) { // Columns: emit typed rows from parsed schema
         while (bind_data.current_idx < bind_data.col_names.size() && count < STANDARD_VECTOR_SIZE) {
             idx_t idx = bind_data.current_idx;
-            output.SetValue(0, count, Value(bind_data.col_names[idx]));
-            output.SetValue(1, count, Value(bind_data.col_types[idx]));
-            output.SetValue(2, count, Value::BOOLEAN(bind_data.col_nullables[idx]));
-            output.SetValue(3, count, Value::INTEGER(static_cast<int32_t>(idx + 1)));
+            output.data[0].Append(Value(bind_data.col_names[idx]));
+            output.data[1].Append(Value(bind_data.col_types[idx]));
+            output.data[2].Append(Value::BOOLEAN(bind_data.col_nullables[idx]));
+            output.data[3].Append(Value::INTEGER(static_cast<int32_t>(idx + 1)));
             bind_data.current_idx++;
             count++;
         }
-        output.SetCardinality(count);
+        output.CheckCardinality(count);
         return;
     }
 
@@ -212,22 +210,22 @@ static void ListFunction(
         auto &item = (*items_json)[bind_data.current_idx];
         idx_t col = 0;
 
-        output.SetValue(col++, count, Value(item["name"].get<string>()));
+        output.data[col++].Append(Value(item["name"].get<string>()));
 
         if (bind_data.list_type == 1) {
-            output.SetValue(col++, count, Value(item["share"].get<string>()));
+            output.data[col++].Append(Value(item["share"].get<string>()));
         } else if (bind_data.list_type == 2) {
-            output.SetValue(col++, count, Value(item["schema"].get<string>()));
-            output.SetValue(col++, count, Value(item["share"].get<string>()));
+            output.data[col++].Append(Value(item["schema"].get<string>()));
+            output.data[col++].Append(Value(item["share"].get<string>()));
         }
 
         // This should not be empty but our Delta Sharing server hides this from the response ._.
-        output.SetValue(col++, count, Value(item["id"].is_null() ? "" : item["id"].get<string>()));
+        output.data[col++].Append(Value(item["id"].is_null() ? "" : item["id"].get<string>()));
         bind_data.current_idx++;
         count++;
     }
 
-    output.SetCardinality(count);
+    output.CheckCardinality(count);
 }
 
 // -----------------------------------------------------------------------------
@@ -243,11 +241,11 @@ struct DeltaShareEmptyInterface : public MultiFileReaderInterface {
 	unique_ptr<BaseFileReaderOptions> InitializeOptions(ClientContext &context, optional_ptr<TableFunctionInfo> info) override {
 		return make_uniq<BaseFileReaderOptions>();
 	}
-	bool ParseCopyOption(ClientContext &context, const string &key, const vector<Value> &values, BaseFileReaderOptions &options,
-	                     vector<string> &expected_names, vector<LogicalType> &expected_types) override {
+	bool ParseCopyOption(ClientContext &context, const Identifier &key, const vector<Value> &values, BaseFileReaderOptions &options,
+	                     vector<Identifier> &expected_names, vector<LogicalType> &expected_types) override {
 		return false;
 	}
-	bool ParseOption(ClientContext &context, const string &key, const Value &val, MultiFileOptions &file_options,
+	bool ParseOption(ClientContext &context, const Identifier &key, const Value &val, MultiFileOptions &file_options,
 	                 BaseFileReaderOptions &options) override {
 		return false;
 	}
@@ -255,13 +253,13 @@ struct DeltaShareEmptyInterface : public MultiFileReaderInterface {
 	                                                 unique_ptr<BaseFileReaderOptions> options) override {
 		return make_uniq<TableFunctionData>();
 	}
-	void BindReader(ClientContext &context, vector<LogicalType> &return_types, vector<string> &names,
+	void BindReader(ClientContext &context, vector<LogicalType> &return_types, vector<Identifier> &names,
 	                MultiFileBindData &bind_data) override {}
 	unique_ptr<GlobalTableFunctionState> InitializeGlobalState(ClientContext &context, MultiFileBindData &bind_data,
 	                                                         MultiFileGlobalState &global_state) override {
 		return make_uniq<GlobalTableFunctionState>();
 	}
-	unique_ptr<LocalTableFunctionState> InitializeLocalState(ExecutionContext &, GlobalTableFunctionState &) override {
+	unique_ptr<LocalTableFunctionState> InitializeLocalState(ClientContext &, GlobalTableFunctionState &) override {
 		return make_uniq<LocalTableFunctionState>();
 	}
 	shared_ptr<BaseFileReader> CreateReader(ClientContext &context, GlobalTableFunctionState &gstate, BaseUnionData &union_data,
@@ -283,7 +281,7 @@ static void ReadDeltaShareFunctionWrapper(ClientContext &context, TableFunctionI
     auto &bind_data = data_p.bind_data->Cast<MultiFileBindData>();
     auto &ds_file_list = bind_data.file_list->Cast<DeltaShareMultiFileList>();
     if (ds_file_list.files.empty()) {
-        output.SetCardinality(0);
+        output.SetChildCardinality(0);
         return;
     }
     if (base_parquet_scan_function) {
@@ -299,16 +297,16 @@ static void ReadDeltaShareFunctionWrapper(ClientContext &context, TableFunctionI
 // TODO: implement serialization so these scans can take part in optimized plans
 // (common subplan elimination, CTE inlining, window self-join).
 static void DeltaShareScanSerialize(Serializer &serializer, const optional_ptr<FunctionData> bind_data,
-                                    const TableFunction &function) {
+                                    const BoundTableFunction &function) {
     throw NotImplementedException("Delta Sharing scan serialization not implemented");
 }
 
 // TODO: implement deserialization together with DeltaShareScanSerialize.
-static unique_ptr<FunctionData> DeltaShareScanDeserialize(Deserializer &deserializer, TableFunction &function) {
+static unique_ptr<FunctionData> DeltaShareScanDeserialize(Deserializer &deserializer, BoundTableFunction &function) {
     throw NotImplementedException("Delta Sharing scan deserialization not implemented");
 }
 
-static unique_ptr<MultiFileReader> CreateDeltaShareMultiFileReader(const TableFunction &function) {
+static unique_ptr<MultiFileReader> CreateDeltaShareMultiFileReader(const BoundTableFunction &function) {
     return make_uniq<DeltaShareMultiFileReader>();
 }
 
@@ -316,7 +314,7 @@ static unique_ptr<FunctionData> ReadDeltaShareBind(
     ClientContext &context,
     TableFunctionBindInput &input,
     vector<LogicalType> &return_types,
-    vector<string> &names) {
+    vector<Identifier> &names) {
 
     if (input.inputs.size() < 3) {
         throw BinderException("ReadDeltaShareBind usage: delta_share_read('share_name', 'schema_name', 'table_name'[, timestamp])");
@@ -356,14 +354,18 @@ static unique_ptr<FunctionData> ReadDeltaShareBind(
     auto query_result = client.QueryTable(share_name, schema_name, table_name, predicate_hints, -1, -1, timestamp_str);
 
     if (query_result.files.empty()) {
-    vector<string> physical_names;
-    DeltaSharingClient::ParseSparkSchema(query_result.metadata.schema_string, return_types, names, physical_names);
+        vector<string> parsed_names;
+        vector<string> physical_names;
+        DeltaSharingClient::ParseSparkSchema(query_result.metadata.schema_string, return_types, parsed_names, physical_names);
+        for (const auto &n : parsed_names) {
+            names.emplace_back(n);
+        }
         // Still handle partition columns
         auto* partition_cols_json = static_cast<json*>(query_result.metadata.partition_columns.GetInternalPtr());
         for (const auto& col_json : *partition_cols_json) {
             string col = col_json.get<string>();
             if (std::find(names.begin(), names.end(), col) == names.end()) {
-                names.push_back(col);
+                names.emplace_back(col);
                 return_types.push_back(LogicalType::VARCHAR);
             }
         }
@@ -373,8 +375,8 @@ static unique_ptr<FunctionData> ReadDeltaShareBind(
         bind_data->names = names;
         bind_data->columns.clear();
         for (size_t i = 0; i < names.size(); i++) {
-            string phys_name = (i < physical_names.size() && !physical_names[i].empty()) ? physical_names[i] : names[i];
-            MultiFileColumnDefinition col_def(phys_name, return_types[i]);
+            string phys_name = (i < physical_names.size() && !physical_names[i].empty()) ? physical_names[i] : names[i].GetIdentifierName();
+            MultiFileColumnDefinition col_def(Identifier(phys_name), return_types[i]);
             bind_data->columns.push_back(col_def);
         }
         bind_data->reader_bind.schema = bind_data->columns;
@@ -403,22 +405,27 @@ static unique_ptr<FunctionData> ReadDeltaShareBind(
     // 4. Delegate Bind to DuckDB's Native Parquet Scanner!
     // read_parquet rejects options it doesn't know, so endpoint/secret stop here.
     auto parquet_named_parameters = DeltaSharingSecretRequest::WithoutRequestParameters(input.named_parameters);
-    TableFunctionBindInput inner_input(inputs_list, parquet_named_parameters, input.input_table_types, input.input_table_names, read_parquet.function_info.get(), input.binder, read_parquet, input.ref);
+    BoundTableFunction bound_read_parquet(read_parquet);
+    TableFunctionBindInput inner_input(inputs_list, parquet_named_parameters, input.input_table_types, input.input_table_names, read_parquet.function_info.get(), input.binder, bound_read_parquet, input.ref);
     auto bind_data = read_parquet.bind(context, inner_input, return_types, names);
 
     // Overwrite the returned schema with the LOGICAL schema from Delta Share!
     return_types.clear();
     names.clear();
+    vector<string> parsed_names;
     vector<string> physical_names;
-    DeltaSharingClient::ParseSparkSchema(ds_file_list->metadata.schema_string, return_types, names, physical_names);
+    DeltaSharingClient::ParseSparkSchema(ds_file_list->metadata.schema_string, return_types, parsed_names, physical_names);
+    for (const auto &n : parsed_names) {
+        names.emplace_back(n);
+    }
 
     auto &multi_file_bind = bind_data->Cast<MultiFileBindData>();
     multi_file_bind.types = return_types;
     multi_file_bind.names = names;
     multi_file_bind.columns.clear();
     for (size_t i = 0; i < names.size(); i++) {
-        string phys_name = (i < physical_names.size() && !physical_names[i].empty()) ? physical_names[i] : names[i];
-        MultiFileColumnDefinition col_def(phys_name, return_types[i]);
+        string phys_name = (i < physical_names.size() && !physical_names[i].empty()) ? physical_names[i] : names[i].GetIdentifierName();
+        MultiFileColumnDefinition col_def(Identifier(phys_name), return_types[i]);
         multi_file_bind.columns.push_back(col_def);
     }
 
@@ -432,11 +439,11 @@ static unique_ptr<FunctionData> ReadDeltaShareBind(
     for (const auto& col : ds_file_list->partition_columns) {
         auto it = std::find(names.begin(), names.end(), col);
         if (it == names.end()) {
-            names.push_back(col);
+            names.emplace_back(col);
             return_types.push_back(LogicalType::VARCHAR);
-            MultiFileColumnDefinition col_def(col, LogicalType::VARCHAR);
+            MultiFileColumnDefinition col_def(Identifier(col), LogicalType::VARCHAR);
             multi_file_bind.columns.push_back(col_def);
-            multi_file_bind.names.push_back(col);
+            multi_file_bind.names.emplace_back(col);
             multi_file_bind.types.push_back(LogicalType::VARCHAR);
         }
     }
@@ -453,7 +460,7 @@ static unique_ptr<FunctionData> ReadDeltaShareCdfBind(
     ClientContext &context,
     TableFunctionBindInput &input,
     vector<LogicalType> &return_types,
-    vector<string> &names) {
+    vector<Identifier> &names) {
 
     if (input.inputs.size() < 3) {
         throw BinderException("ReadDeltaShareCdfBind usage: delta_share_change_data_feed('share_name', 'schema_name', 'table_name'[, startingVersion[, endingVersion]])");
@@ -501,14 +508,18 @@ static unique_ptr<FunctionData> ReadDeltaShareCdfBind(
     auto query_result = client.QueryTableChanges(share_name, schema_name, table_name, starting_version, ending_version, starting_timestamp, ending_timestamp);
 
     if (query_result.files.empty()) {
+        vector<string> parsed_names;
         vector<string> physical_names;
-        DeltaSharingClient::ParseSparkSchema(query_result.metadata.schema_string, return_types, names, physical_names);
+        DeltaSharingClient::ParseSparkSchema(query_result.metadata.schema_string, return_types, parsed_names, physical_names);
+        for (const auto &n : parsed_names) {
+            names.emplace_back(n);
+        }
         
         auto* partition_cols_json = static_cast<json*>(query_result.metadata.partition_columns.GetInternalPtr());
         for (const auto& col_json : *partition_cols_json) {
             string col = col_json.get<string>();
             if (std::find(names.begin(), names.end(), col) == names.end()) {
-                names.push_back(col);
+                names.emplace_back(col);
                 return_types.push_back(LogicalType::VARCHAR);
             }
         }
@@ -517,7 +528,7 @@ static unique_ptr<FunctionData> ReadDeltaShareCdfBind(
         vector<LogicalType> cdf_types = {LogicalType::VARCHAR, LogicalType::BIGINT, LogicalType::TIMESTAMP};
         for (size_t i = 0; i < cdf_cols.size(); i++) {
             if (std::find(names.begin(), names.end(), cdf_cols[i]) == names.end()) {
-                names.push_back(cdf_cols[i]);
+                names.emplace_back(cdf_cols[i]);
                 return_types.push_back(cdf_types[i]);
             }
         }
@@ -528,8 +539,8 @@ static unique_ptr<FunctionData> ReadDeltaShareCdfBind(
         bind_data->names = names;
         bind_data->columns.clear();
         for (size_t i = 0; i < names.size(); i++) {
-            string phys_name = (i < physical_names.size() && !physical_names[i].empty()) ? physical_names[i] : names[i];
-            MultiFileColumnDefinition col_def(phys_name, return_types[i]);
+            string phys_name = (i < physical_names.size() && !physical_names[i].empty()) ? physical_names[i] : names[i].GetIdentifierName();
+            MultiFileColumnDefinition col_def(Identifier(phys_name), return_types[i]);
             bind_data->columns.push_back(col_def);
         }
         bind_data->reader_bind.schema = bind_data->columns;
@@ -568,7 +579,8 @@ static unique_ptr<FunctionData> ReadDeltaShareCdfBind(
 
     // read_parquet rejects options it doesn't know, so endpoint/secret stop here.
     auto parquet_named_parameters = DeltaSharingSecretRequest::WithoutRequestParameters(input.named_parameters);
-    TableFunctionBindInput inner_input(inputs_list, parquet_named_parameters, input.input_table_types, input.input_table_names, read_parquet.function_info.get(), input.binder, read_parquet, input.ref);
+    BoundTableFunction bound_read_parquet(read_parquet);
+    TableFunctionBindInput inner_input(inputs_list, parquet_named_parameters, input.input_table_types, input.input_table_names, read_parquet.function_info.get(), input.binder, bound_read_parquet, input.ref);
 
     // Do NOT pass modified return_types/names yet to prevent Parquet scanner column mismatch
     auto bind_data = read_parquet.bind(context, inner_input, return_types, names);
@@ -576,16 +588,20 @@ static unique_ptr<FunctionData> ReadDeltaShareCdfBind(
     // Overwrite the returned schema with the LOGICAL schema from Delta Share!
     return_types.clear();
     names.clear();
+    vector<string> parsed_names;
     vector<string> physical_names;
-    DeltaSharingClient::ParseSparkSchema(ds_file_list->metadata.schema_string, return_types, names, physical_names);
+    DeltaSharingClient::ParseSparkSchema(ds_file_list->metadata.schema_string, return_types, parsed_names, physical_names);
+    for (const auto &n : parsed_names) {
+        names.emplace_back(n);
+    }
 
     auto &multi_file_bind = bind_data->Cast<MultiFileBindData>();
     multi_file_bind.types = return_types;
     multi_file_bind.names = names;
     multi_file_bind.columns.clear();
     for (size_t i = 0; i < names.size(); i++) {
-        string phys_name = (i < physical_names.size() && !physical_names[i].empty()) ? physical_names[i] : names[i];
-        MultiFileColumnDefinition col_def(phys_name, return_types[i]);
+        string phys_name = (i < physical_names.size() && !physical_names[i].empty()) ? physical_names[i] : names[i].GetIdentifierName();
+        MultiFileColumnDefinition col_def(Identifier(phys_name), return_types[i]);
         multi_file_bind.columns.push_back(col_def);
     }
     multi_file_bind.file_options.auto_detect_hive_partitioning = false;
@@ -595,11 +611,11 @@ static unique_ptr<FunctionData> ReadDeltaShareCdfBind(
     // Now safely append partition and CDF columns to schema
     for (const auto& col : ds_file_list->partition_columns) {
         if (std::find(names.begin(), names.end(), col) == names.end()) {
-            names.push_back(col);
+            names.emplace_back(col);
             return_types.push_back(LogicalType::VARCHAR);
-            MultiFileColumnDefinition col_def(col, LogicalType::VARCHAR);
+            MultiFileColumnDefinition col_def(Identifier(col), LogicalType::VARCHAR);
             multi_file_bind.columns.push_back(col_def);
-            multi_file_bind.names.push_back(col);
+            multi_file_bind.names.emplace_back(col);
             multi_file_bind.types.push_back(LogicalType::VARCHAR);
         }
     }
@@ -608,11 +624,11 @@ static unique_ptr<FunctionData> ReadDeltaShareCdfBind(
     vector<LogicalType> cdf_types = {LogicalType::VARCHAR, LogicalType::BIGINT, LogicalType::TIMESTAMP};
     for (size_t i = 0; i < cdf_cols.size(); i++) {
         if (std::find(names.begin(), names.end(), cdf_cols[i]) == names.end()) {
-            names.push_back(cdf_cols[i]);
+            names.emplace_back(cdf_cols[i]);
             return_types.push_back(cdf_types[i]);
-            MultiFileColumnDefinition col_def(cdf_cols[i], cdf_types[i]);
+            MultiFileColumnDefinition col_def(Identifier(cdf_cols[i]), cdf_types[i]);
             multi_file_bind.columns.push_back(col_def);
-            multi_file_bind.names.push_back(cdf_cols[i]);
+            multi_file_bind.names.emplace_back(cdf_cols[i]);
             multi_file_bind.types.push_back(cdf_types[i]);
         }
     }
@@ -627,11 +643,8 @@ static unique_ptr<FunctionData> ReadDeltaShareCdfBind(
 
 // Section: delta_share_list_files scalar function
 
-static unique_ptr<FunctionData> DeltaShareListFilesBind(
-    ClientContext &context,
-    ScalarFunction &bound_function,
-    vector<unique_ptr<Expression>> &arguments) {
-
+static unique_ptr<FunctionData> DeltaShareListFilesBind(BindScalarFunctionInput &input) {
+    auto &arguments = input.GetArguments();
     auto result = make_uniq<DeltaShareListFilesBindData>();
     result->has_predicate_hints = (arguments.size() == 4);
     return std::move(result);
@@ -642,14 +655,14 @@ static void DeltaShareListFilesFunction(
     ExpressionState &state,
     Vector &result) {
 
-    auto &bind_data = state.expr.Cast<BoundFunctionExpression>().bind_info->Cast<DeltaShareListFilesBindData>();
+    auto &bind_data = state.expr.Cast<BoundFunctionExpression>().BindInfo()->Cast<DeltaShareListFilesBindData>();
 
     idx_t count = args.size();
 
     // Setup result as LIST(VARCHAR)
     result.SetVectorType(VectorType::FLAT_VECTOR);
     auto list_data = DUCK_DELTA_GET_DATA_MUTABLE<list_entry_t>(result);
-    auto &child_vector = ListVector::GetEntry(result);
+    auto &child_vector = ListVector::GetChildMutable(result);
     auto &result_validity = FlatVector::Validity(result);
 
     idx_t total_size = 0;
@@ -764,10 +777,40 @@ static FunctionDescription MakeTableFunctionDescription(
     desc.categories = std::move(categories);
 
     desc.parameter_names = std::move(positional_param_names);
-    for (const auto &named_param : func.named_parameters) {
-        desc.parameter_names.push_back(named_param.first);
+    if (auto kwargs = func.GetSignature().GetTypedKwargs()) {
+        for (const auto &opt : kwargs->GetOptions()) {
+            desc.parameter_names.push_back(opt.name.GetIdentifierName());
+        }
     }
     return desc;
+}
+
+static void SetOverlaySignature(
+    TableFunction &func,
+    const TableFunction &parquet_func,
+    const vector<pair<string, LogicalType>> &positional_params) {
+
+    FunctionSignature sig;
+    for (const auto &param : positional_params) {
+        sig.AddPositionalOnly(Identifier(param.first), param.second);
+    }
+    TypedKwargs options;
+    if (auto parquet_kwargs = parquet_func.GetSignature().GetTypedKwargs()) {
+        for (const auto &opt : parquet_kwargs->GetOptions()) {
+            if (opt.name == "schema") {
+                continue;
+            }
+            options.Add(opt.name, opt.type);
+            for (const auto &alias : opt.aliases) {
+                if (alias != "schema") {
+                    options.Alias(alias);
+                }
+            }
+        }
+    }
+    sig.AddTypedKwargs("options", std::move(options));
+    func.GetSignature() = std::move(sig);
+    DeltaSharingSecretRequest::AddNamedParameters(func);
 }
 
 static void LoadInternal(DUCKDB_DELTA_SHARING_EXTENSION_LOAD_PARAM) {
@@ -847,7 +890,7 @@ static void LoadInternal(DUCKDB_DELTA_SHARING_EXTENSION_LOAD_PARAM) {
     // Delta Sharing Functions
     // 1. delta_share_list
     TableFunction list("delta_share_list", {}, ListFunction, ListBind);
-    list.varargs = LogicalType::VARCHAR;
+    list.GetSignature().AddArgs("args", LogicalType::VARCHAR);
     DeltaSharingSecretRequest::AddNamedParameters(list);
     CreateTableFunctionInfo list_info(list);
     list_info.on_conflict = OnCreateConflict::ALTER_ON_CONFLICT;
@@ -861,6 +904,7 @@ static void LoadInternal(DUCKDB_DELTA_SHARING_EXTENSION_LOAD_PARAM) {
 
     // 2. delta_share_list_all_tables
     TableFunction all_tables("delta_share_list_all_tables", {LogicalType::VARCHAR}, ListFunction, AllTablesBind);
+    all_tables.GetSignature().GetParameter(0).SetName("share_name");
     DeltaSharingSecretRequest::AddNamedParameters(all_tables);
     CreateTableFunctionInfo all_tables_info(all_tables);
     all_tables_info.on_conflict = OnCreateConflict::ALTER_ON_CONFLICT;
@@ -874,9 +918,10 @@ static void LoadInternal(DUCKDB_DELTA_SHARING_EXTENSION_LOAD_PARAM) {
 
     // Register our read_parquet overlay!
     auto &parquet_scan_entry = DUCKDB_GET_TABLE_FUNCTION(db, con, "read_parquet");
-    TableFunction base_read = parquet_scan_entry.functions.functions[0];
+    const TableFunction &parquet_func = *parquet_scan_entry.functions.functions[0];
+    TableFunction base_read = parquet_func;
     base_parquet_scan_function = base_read.function;
-    g_read_parquet_function = make_uniq<TableFunction>(parquet_scan_entry.functions.GetFunctionByArguments(*con.context, {LogicalType::LIST(LogicalType::VARCHAR)}));
+    g_read_parquet_function = make_uniq<TableFunction>(*parquet_scan_entry.functions.GetFunctionByArguments(*con.context, {LogicalType::LIST(LogicalType::VARCHAR)}));
 
     base_read.function = ReadDeltaShareFunctionWrapper;
     base_read.get_multi_file_reader = CreateDeltaShareMultiFileReader;
@@ -886,8 +931,6 @@ static void LoadInternal(DUCKDB_DELTA_SHARING_EXTENSION_LOAD_PARAM) {
     base_read.get_partition_stats = nullptr;
     base_read.statistics = nullptr;
     base_read.cardinality = nullptr;
-    base_read.named_parameters.erase("schema");
-    DeltaSharingSecretRequest::AddNamedParameters(base_read);
 
     // 3. delta_share_read
     TableFunctionSet delta_share_read("delta_share_read");
@@ -895,19 +938,33 @@ static void LoadInternal(DUCKDB_DELTA_SHARING_EXTENSION_LOAD_PARAM) {
     // 3-argument version
     TableFunction read_3arg = base_read;
     read_3arg.name = "delta_share_read";
-    read_3arg.arguments = {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR};
+    SetOverlaySignature(read_3arg, parquet_func, {
+        {"share_name", LogicalType::VARCHAR},
+        {"schema_name", LogicalType::VARCHAR},
+        {"table_name", LogicalType::VARCHAR}
+    });
     delta_share_read.AddFunction(read_3arg);
 
     // 4-argument version (Time Travel - TIMESTAMP)
     TableFunction read_4arg_ts = base_read;
     read_4arg_ts.name = "delta_share_read";
-    read_4arg_ts.arguments = {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::TIMESTAMP};
+    SetOverlaySignature(read_4arg_ts, parquet_func, {
+        {"share_name", LogicalType::VARCHAR},
+        {"schema_name", LogicalType::VARCHAR},
+        {"table_name", LogicalType::VARCHAR},
+        {"timestamp", LogicalType::TIMESTAMP}
+    });
     delta_share_read.AddFunction(read_4arg_ts);
 
     // 4-argument version (Time Travel - TIMESTAMPTZ)
     TableFunction read_4arg_tstz = base_read;
     read_4arg_tstz.name = "delta_share_read";
-    read_4arg_tstz.arguments = {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::TIMESTAMP_TZ};
+    SetOverlaySignature(read_4arg_tstz, parquet_func, {
+        {"share_name", LogicalType::VARCHAR},
+        {"schema_name", LogicalType::VARCHAR},
+        {"table_name", LogicalType::VARCHAR},
+        {"timestamp", LogicalType::TIMESTAMP_TZ}
+    });
     delta_share_read.AddFunction(read_4arg_tstz);
 
     CreateTableFunctionInfo read_info(delta_share_read);
@@ -939,17 +996,32 @@ static void LoadInternal(DUCKDB_DELTA_SHARING_EXTENSION_LOAD_PARAM) {
 
     // 3-arg (starts from version 0)
     TableFunction cdf_3arg = base_cdf;
-    cdf_3arg.arguments = {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR};
+    SetOverlaySignature(cdf_3arg, parquet_func, {
+        {"share_name", LogicalType::VARCHAR},
+        {"schema_name", LogicalType::VARCHAR},
+        {"table_name", LogicalType::VARCHAR}
+    });
     delta_share_cdf.AddFunction(cdf_3arg);
 
     // 4-arg (start version or timestamp)
     TableFunction cdf_4arg = base_cdf;
-    cdf_4arg.arguments = {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::ANY};
+    SetOverlaySignature(cdf_4arg, parquet_func, {
+        {"share_name", LogicalType::VARCHAR},
+        {"schema_name", LogicalType::VARCHAR},
+        {"table_name", LogicalType::VARCHAR},
+        {"starting_version_or_timestamp", LogicalType::ANY}
+    });
     delta_share_cdf.AddFunction(cdf_4arg);
 
     // 5-arg (start and end version/timestamp)
     TableFunction cdf_5arg = base_cdf;
-    cdf_5arg.arguments = {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::ANY, LogicalType::ANY};
+    SetOverlaySignature(cdf_5arg, parquet_func, {
+        {"share_name", LogicalType::VARCHAR},
+        {"schema_name", LogicalType::VARCHAR},
+        {"table_name", LogicalType::VARCHAR},
+        {"starting_version_or_timestamp", LogicalType::ANY},
+        {"ending_version_or_timestamp", LogicalType::ANY}
+    });
     delta_share_cdf.AddFunction(cdf_5arg);
 
     CreateTableFunctionInfo cdf_info(delta_share_cdf);
@@ -979,17 +1051,26 @@ static void LoadInternal(DUCKDB_DELTA_SHARING_EXTENSION_LOAD_PARAM) {
 
     // 3-argument version (no predicate hints)
     ScalarFunction list_files_3arg(
-        {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR},
+        {{"share_name", LogicalType::VARCHAR},
+         {"schema_name", LogicalType::VARCHAR},
+         {"table_name", LogicalType::VARCHAR}},
         LogicalType::LIST(LogicalType::VARCHAR),
         DeltaShareListFilesFunction,
         DeltaShareListFilesBind);
+    list_files_3arg.SetFallible();
+    list_files_3arg.SetVolatile();
 
     // 4-argument version (with predicate hints)
     ScalarFunction list_files_4arg(
-        {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR},
+        {{"share_name", LogicalType::VARCHAR},
+         {"schema_name", LogicalType::VARCHAR},
+         {"table_name", LogicalType::VARCHAR},
+         {"predicate_hints", LogicalType::VARCHAR}},
         LogicalType::LIST(LogicalType::VARCHAR),
         DeltaShareListFilesFunction,
         DeltaShareListFilesBind);
+    list_files_4arg.SetFallible();
+    list_files_4arg.SetVolatile();
 
     list_files_set.AddFunction(list_files_3arg);
     list_files_set.AddFunction(list_files_4arg);

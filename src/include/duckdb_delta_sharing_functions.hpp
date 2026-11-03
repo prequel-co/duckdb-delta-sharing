@@ -12,11 +12,11 @@ namespace duckdb {
 using json = nlohmann::json;
 
 // ParsedExpression to JSON helpers (for string predicate parsing)
-json ParsedOperandJSON(ParsedExpression &expr);
+json ParsedOperandJSON(const ParsedExpression &expr);
 
-json ParsedBinaryOpJSON(ParsedExpression &expr, std::string op);
+json ParsedBinaryOpJSON(const ParsedExpression &expr, std::string op);
 
-json ParseParsedExpressionHint(ParsedExpression &expr);
+json ParseParsedExpressionHint(const ParsedExpression &expr);
 
 json ParsePredicateStringToJson(const std::string &predicate_string);
 

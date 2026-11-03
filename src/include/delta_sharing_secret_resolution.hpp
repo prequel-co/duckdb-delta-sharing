@@ -14,9 +14,9 @@ struct DeltaSharingSecretRequest {
     string endpoint;
     string secret;
 
-    static DeltaSharingSecretRequest FromNamedParameters(const named_parameter_map_t &named_parameters);
+    static DeltaSharingSecretRequest FromNamedParameters(const named_argument_map_t &named_parameters);
     // A copy without `endpoint`/`secret`, for binds that forward to read_parquet.
-    static named_parameter_map_t WithoutRequestParameters(const named_parameter_map_t &named_parameters);
+    static named_argument_map_t WithoutRequestParameters(const named_argument_map_t &named_parameters);
     static void AddNamedParameters(TableFunction &function);
 };
 

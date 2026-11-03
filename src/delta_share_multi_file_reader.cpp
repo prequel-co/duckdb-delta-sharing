@@ -94,7 +94,7 @@ ReaderInitializeType DeltaShareMultiFileReader::InitializeReader(
                         continue;
                     }
 
-                    const string &col_name = global_columns[col_id].name;
+                    const string &col_name = global_columns[col_id].name.GetIdentifierName();
                     bool should_add = false;
                     Value val;
 
@@ -219,9 +219,9 @@ void DeltaShareMultiFileReader::FinalizeBind(
     if (share_file_list && !share_file_list->column_mapping.empty()) {
         vector<MultiFileColumnDefinition> mapped_columns = global_columns;
         for (auto &col : mapped_columns) {
-            auto it = share_file_list->column_mapping.find(col.name);
+            auto it = share_file_list->column_mapping.find(col.name.GetIdentifierName());
             if (it != share_file_list->column_mapping.end()) {
-                col.name = it->second;
+                col.name = Identifier(it->second);
             }
         }
         MultiFileReader::FinalizeBind(reader_data, file_options, options, mapped_columns, global_column_ids, context, global_state);

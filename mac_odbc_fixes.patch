@@ -1617,7 +1617,7 @@ index 297698c9..b9fc7475 100644
  	if (ret != SQL_SUCCESS) {
 @@ -94,6 +104,14 @@ SQLRETURN SQL_API SQLNumParams(SQLHSTMT statement_handle, SQLSMALLINT *parameter
  	}
- 	*parameter_count_ptr = (SQLSMALLINT)hstmt->stmt->named_param_map.size();
+ 	*parameter_count_ptr = (SQLSMALLINT)hstmt->stmt->GetNamedParameterMap().size();
  	return SQL_SUCCESS;
 +
 +	} catch (duckdb::Exception &ex) {

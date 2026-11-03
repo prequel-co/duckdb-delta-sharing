@@ -1178,7 +1178,7 @@ static LogicalType ParseSparkType(const json &type_json) {
                     if (field.contains("type")) {
                         child_type = ParseSparkType(field.at("type"));
                     }
-                    children.push_back(make_pair(name, child_type));
+                    children.emplace_back(Identifier(name), child_type);
                 }
             }
             return LogicalType::STRUCT(children);

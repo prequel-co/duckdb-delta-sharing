@@ -5,6 +5,7 @@ duckdb_extension_load(duckdb_delta_sharing
     SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR}
     LOAD_TESTS
 )
+duckdb_extension_statically_link(duckdb_delta_sharing)
 
 # Any extra extensions that should be built
 # DuckDB >= 1.2+ automatically builds core extensions that are specified
